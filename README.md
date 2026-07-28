@@ -6,7 +6,8 @@ Un gioco web di precisione, stima, memoria e riflessi. Ogni partita seleziona 10
 
 - 200 mini-sfide in 16 famiglie, tutte giocabili con mouse e touch
 - 10 meccaniche sempre diverse in ogni partita, con rotazione anti-ripetizione fra partite consecutive
-- modalità Giocatore singolo e Sfida un amico tramite link, senza necessità di backend
+- modalità Giocatore singolo, Sfida un amico tramite link e Allenamento libero
+- catalogo di allenamento con ricerca, filtri per famiglia e record locale per ciascuno dei 200 livelli
 - conto alla rovescia di 5 secondi prima delle prove ad avvio automatico
 - punteggio di accuratezza 0–100 e grado arcade da E a S+
 - feedback immediato dopo ogni prova
@@ -69,6 +70,10 @@ Per ridurre la monotonia, rispetto alla partita precedente vengono scelte 7 mecc
 ## Sfida un amico
 
 La modalità sfida non richiede account o server. Chi crea la sfida condivide subito un link che contiene gli identificativi delle dieci prove, un seed casuale e l'orario comune di partenza. Entrambi entrano nella lobby e il gioco inizia automaticamente allo stesso istante, con gli stessi livelli e le stesse configurazioni casuali. Al termine ciascun giocatore può condividere il proprio risultato; l'altro può aprirlo oppure incollarlo nel pannello **Confronta con un amico** per vedere vittoria, sconfitta, pareggio e differenza punti.
+
+## Allenamento
+
+La modalità **Allenamento** permette di cercare e filtrare l'intero catalogo, avviare una singola prova e ripeterla senza limiti. Il miglior risultato di ogni livello viene salvato sul dispositivo tramite `localStorage` e mostrato direttamente nella relativa scheda.
 
 ## Compatibilità
 

@@ -20,6 +20,8 @@ const controls = $('#challenge-controls');
 const feedbackLayer = $('#feedback-layer');
 const howDialog = $('#how-dialog');
 const compareDialog = $('#compare-dialog');
+const trainingDialog = $('#training-dialog');
+let trainingFamily = 'Tutte';
 
 function syncViewportHeight() {
   const height = window.visualViewport?.height || window.innerHeight;
@@ -152,6 +154,21 @@ function tone(frequency = 440, duration = 0.07, type = 'sine') {
   } catch { /* Sound remains an optional enhancement. */ }
 }
 
+function blockGameSpaceScroll(event) {
+  if (!document.body.classList.contains('is-playing')) return;
+  if (event.code !== 'Space' && event.key !== ' ') return;
+
+  // Focused challenge and feedback buttons keep their native keyboard action.
+  // Everywhere else Space belongs exclusively to the active challenge.
+  const isGameButton = event.target instanceof Element
+    && event.target.closest('.challenge-card button, .feedback-layer button');
+  if (isGameButton) return;
+  event.preventDefault();
+}
+
+window.addEventListener('keydown', blockGameSpaceScroll, { capture: true });
+window.addEventListener('keyup', blockGameSpaceScroll, { capture: true });
+
 function addKeyHandler(keys, handler) {
   const listener = (event) => {
     if (keys.includes(event.code) && !event.repeat && feedbackLayer.hidden) {
@@ -220,7 +237,18 @@ function challengeResult(score, detail) {
   $('#feedback-score').textContent = finalScore;
   $('#feedback-title').textContent = scoreMessage(finalScore);
   $('#feedback-detail').textContent = detail;
-  $('#next-button span').textContent = state.round === 9 ? 'VEDI IL RISULTATO' : 'PROSSIMA SFIDA';
+  if (state.mode === 'training') {
+    const bestKey = `quasi-training-best:${state.deck[0].id}`;
+    const storedTrainingBest = localStorage.getItem(bestKey);
+    if (storedTrainingBest === null || finalScore > Number(storedTrainingBest)) {
+      localStorage.setItem(bestKey, String(finalScore));
+    }
+    $('#next-button span').textContent = 'RIPROVA IL LIVELLO';
+    $('#training-back-button').hidden = false;
+  } else {
+    $('#next-button span').textContent = state.round === 9 ? 'VEDI IL RISULTATO' : 'PROSSIMA SFIDA';
+    $('#training-back-button').hidden = true;
+  }
   feedbackLayer.hidden = false;
   $('#next-button').focus();
 }
@@ -243,15 +271,18 @@ function startGame({ mode = 'solo', deck = null, opponentScore = null, seed = nu
   state.opponentScore = opponentScore;
   state.challengeSeed = seed || createChallengeSeed();
   state.startAt = startAt;
-  localStorage.setItem('quasi-recent-kinds', JSON.stringify(state.deck.map((challenge) => challenge.kind)));
-  const updatedRecentIds = [...state.deck.map((challenge) => challenge.id), ...recentIds]
-    .filter((id, index, items) => items.indexOf(id) === index)
-    .slice(0, 80);
-  localStorage.setItem('quasi-recent-levels', JSON.stringify(updatedRecentIds));
+  if (mode !== 'training') {
+    localStorage.setItem('quasi-recent-kinds', JSON.stringify(state.deck.map((challenge) => challenge.kind)));
+    const updatedRecentIds = [...state.deck.map((challenge) => challenge.id), ...recentIds]
+      .filter((id, index, items) => items.indexOf(id) === index)
+      .slice(0, 80);
+    localStorage.setItem('quasi-recent-levels', JSON.stringify(updatedRecentIds));
+  }
   state.results = [];
   state.round = 0;
   state.locked = false;
   howDialog.close();
+  if (trainingDialog.open) trainingDialog.close();
   showScreen(gameScreen);
   renderChallenge();
 }
@@ -261,9 +292,15 @@ function renderChallenge() {
   state.locked = false;
   const challenge = state.deck[state.round];
   state.randomSource = seededRandom(`${state.challengeSeed}:${state.round}:${challenge.id}`);
-  $('#round-number').textContent = state.round + 1;
-  $('#progress-fill').style.width = `${(state.round + 1) * 10}%`;
-  $('#running-score').textContent = state.results.length ? Math.round(mean(state.results.map((item) => item.score))) : '—';
+  const isTraining = state.mode === 'training';
+  $('#round-context').textContent = isTraining ? 'ALLENAMENTO' : 'SFIDA';
+  $('#round-number').textContent = isTraining ? '' : state.round + 1;
+  $('#round-total').textContent = isTraining ? ' · LIVELLO SINGOLO' : ' / 10';
+  $('#progress-fill').style.width = isTraining ? '100%' : `${(state.round + 1) * 10}%`;
+  $('#running-label').textContent = isTraining ? 'RECORD' : 'MEDIA';
+  $('#running-score').textContent = isTraining
+    ? localStorage.getItem(`quasi-training-best:${challenge.id}`) || '—'
+    : state.results.length ? Math.round(mean(state.results.map((item) => item.score))) : '—';
   $('#challenge-category').textContent = challenge.family;
   $('#challenge-title').textContent = challenge.name;
   $('#challenge-instruction').textContent = challenge.instruction;
@@ -834,7 +871,7 @@ function renderAngle(config) {
 }
 
 function renderPercent(config) {
-  const wrap=document.createElement('div');wrap.className='percent-stage';stage.append(wrap);
+  const wrap=document.createElement('div');wrap.className=`percent-stage mode-${config.mode}`;stage.append(wrap);
   const confirm=makeButton('CONFERMA LA STIMA');controls.append(confirm);
   let value=50;
   if(config.mode==='grid'){
@@ -1173,7 +1210,96 @@ async function downloadResult() {
 let toastTimer;
 function showToast(message){const toast=$('#toast');toast.textContent=message;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2600);}
 
+function normalizedSearch(value) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+function trainingBest(challenge) {
+  const value = localStorage.getItem(`quasi-training-best:${challenge.id}`);
+  return value === null ? null : Number(value);
+}
+
+function renderTrainingFilters() {
+  const families = ['Tutte', ...new Set(CHALLENGES.map((challenge) => challenge.family))];
+  const container = $('#training-filters');
+  container.replaceChildren(...families.map((family) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `training-filter${family === trainingFamily ? ' is-active' : ''}`;
+    button.textContent = family;
+    button.dataset.family = family;
+    button.setAttribute('aria-pressed', String(family === trainingFamily));
+    return button;
+  }));
+}
+
+function renderTrainingCatalog() {
+  const query = normalizedSearch($('#training-search').value);
+  const matches = CHALLENGES.filter((challenge) => {
+    if (trainingFamily !== 'Tutte' && challenge.family !== trainingFamily) return false;
+    return !query || normalizedSearch(`${challenge.name} ${challenge.instruction} ${challenge.family}`).includes(query);
+  });
+  const grid = $('#training-grid');
+  grid.replaceChildren(...matches.map((challenge) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'training-level';
+    card.dataset.challengeId = challenge.id;
+    card.style.setProperty('--level-color', FAMILY_COLORS[challenge.family]);
+
+    const family = document.createElement('span');
+    family.className = 'training-level-family';
+    family.textContent = challenge.family;
+    const title = document.createElement('strong');
+    title.textContent = challenge.name;
+    const instruction = document.createElement('small');
+    instruction.textContent = challenge.instruction;
+    const score = document.createElement('span');
+    score.className = 'training-level-score';
+    const best = trainingBest(challenge);
+    score.textContent = best === null ? 'MAI PROVATO · ALLENATI →' : `RECORD ${best}/100 · RIPROVA →`;
+    card.append(family, title, instruction, score);
+    return card;
+  }));
+  grid.hidden = matches.length === 0;
+  $('#training-empty').hidden = matches.length !== 0;
+  $('#training-count').textContent = `${matches.length} ${matches.length === 1 ? 'LIVELLO DISPONIBILE' : 'LIVELLI DISPONIBILI'}`;
+}
+
+function openTrainingDialog() {
+  renderTrainingFilters();
+  renderTrainingCatalog();
+  if (!trainingDialog.open) trainingDialog.showModal();
+  $('#training-grid').scrollTop = 0;
+}
+
+function startTrainingLevel(challenge) {
+  startGame({ mode: 'training', deck: [challenge], seed: createChallengeSeed() });
+}
+
+function returnToTrainingCatalog() {
+  feedbackLayer.hidden = true;
+  clearChallenge();
+  showScreen(homeScreen);
+  openTrainingDialog();
+}
+
 $('#start-button').addEventListener('click',()=>startGame({mode:'solo'}));
+$('#training-button').addEventListener('click', openTrainingDialog);
+$('#training-search').addEventListener('input', renderTrainingCatalog);
+$('#training-filters').addEventListener('click', (event) => {
+  const button = event.target.closest('.training-filter');
+  if (!button) return;
+  trainingFamily = button.dataset.family;
+  renderTrainingFilters();
+  renderTrainingCatalog();
+});
+$('#training-grid').addEventListener('click', (event) => {
+  const card = event.target.closest('.training-level');
+  if (!card) return;
+  const challenge = challengeCatalog.get(card.dataset.challengeId);
+  if (challenge) startTrainingLevel(challenge);
+});
 $('#challenge-button').addEventListener('click',()=>{
   if (incomingChallenge) {
     const hasLocalResult = localStorage.getItem(`quasi-live-result:${incomingChallenge.seed}`) !== null;
@@ -1197,7 +1323,14 @@ $('#restart-button').addEventListener('click',()=>{
 });
 $('#how-button').addEventListener('click',()=>howDialog.showModal());
 $$('.dialog-close').forEach((button)=>button.addEventListener('click',()=>button.closest('dialog').close()));
-$('#next-button').addEventListener('click',()=>{feedbackLayer.hidden=true;if(state.round===9)finishGame();else{state.round+=1;renderChallenge();}});
+$('#next-button').addEventListener('click',()=>{
+  feedbackLayer.hidden = true;
+  if (state.mode === 'training') {
+    startTrainingLevel(state.deck[0]);
+  } else if (state.round === 9) finishGame();
+  else { state.round += 1; renderChallenge(); }
+});
+$('#training-back-button').addEventListener('click', returnToTrainingCatalog);
 $('#share-button').addEventListener('click',shareResult);
 $('#compare-button').addEventListener('click',()=>{$('#compare-output').hidden=true;$('#compare-input').value='';compareDialog.showModal();$('#compare-input').focus();});
 $('#compare-submit').addEventListener('click',compareFriendResult);

@@ -46,6 +46,9 @@
             <button class="secondary-button challenge-mode-button" id="challenge-button" type="button">
               <span>SFIDA UN AMICO</span><b aria-hidden="true">↗</b>
             </button>
+            <button class="secondary-button training-mode-button" id="training-button" type="button">
+              <span>ALLENAMENTO</span><b aria-hidden="true">◎</b>
+            </button>
             <button class="text-button" id="how-button" type="button">COME SI GIOCA?</button>
           </div>
         </div>
@@ -73,10 +76,10 @@
       <section class="screen game-screen" id="game-screen" aria-live="polite">
         <div class="game-topbar">
           <div>
-            <span class="round-label">SFIDA <b id="round-number">1</b> / 10</span>
+            <span class="round-label"><span id="round-context">SFIDA</span> <b id="round-number">1</b><span id="round-total"> / 10</span></span>
             <div class="progress-track" aria-hidden="true"><span id="progress-fill"></span></div>
           </div>
-          <div class="running-score"><span>MEDIA</span><strong id="running-score">—</strong></div>
+          <div class="running-score"><span id="running-label">MEDIA</span><strong id="running-score">—</strong></div>
         </div>
 
         <article class="challenge-card">
@@ -119,6 +122,7 @@
         <li><b>Da 0 a 100</b><span>Ogni gesto viene confrontato con il risultato ideale. Nessun bonus misterioso.</span></li>
         <li><b>Un grado finale</b><span>La media delle prove determina il tuo voto, da E fino all'introvabile S+.</span></li>
         <li><b>Sfida un amico</b><span>Condividi il link, entrate nella lobby e iniziate insieme le stesse dieci prove.</span></li>
+        <li><b>Allenamento libero</b><span>Scegli un livello dal catalogo, ripetilo e prova a migliorare il tuo record personale.</span></li>
       </ol>
       <button class="primary-button dialog-start" type="button"><span>HO CAPITO, GIOCHIAMO</span><b>→</b></button>
     </dialog>
@@ -133,6 +137,23 @@
       <div class="compare-output" id="compare-output" role="status" hidden></div>
     </dialog>
 
+    <dialog class="training-dialog" id="training-dialog">
+      <button class="dialog-close" type="button" aria-label="Chiudi">×</button>
+      <div class="training-header">
+        <p class="eyebrow"><span></span> MODALITÀ ALLENAMENTO</p>
+        <h2>SCEGLI IL TUO<br />LIVELLO.</h2>
+        <p>Esercitati liberamente e migliora il record di ogni singola prova.</p>
+        <label class="training-search-wrap">
+          <span class="sr-only">Cerca un livello</span>
+          <input class="training-search" id="training-search" type="search" autocomplete="off" placeholder="CERCA UN LIVELLO…" />
+        </label>
+        <div class="training-filters" id="training-filters" aria-label="Filtra per categoria"></div>
+        <p class="training-count" id="training-count"></p>
+      </div>
+      <div class="training-grid" id="training-grid"></div>
+      <p class="training-empty" id="training-empty" hidden>Nessun livello corrisponde alla ricerca.</p>
+    </dialog>
+
     <div class="feedback-layer" id="feedback-layer" aria-live="assertive" hidden>
       <div class="feedback-card">
         <span class="feedback-kicker">RISULTATO</span>
@@ -140,6 +161,7 @@
         <h2 id="feedback-title">QUASI PERFETTO!</h2>
         <p id="feedback-detail">Solo 0,041 s di scarto.</p>
         <button class="primary-button" id="next-button" type="button"><span>PROSSIMA SFIDA</span><b>→</b></button>
+        <button class="secondary-button training-back-button" id="training-back-button" type="button" hidden>SCEGLI UN ALTRO LIVELLO</button>
       </div>
     </div>
 
