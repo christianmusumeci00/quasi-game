@@ -1,0 +1,23 @@
+{
+  "name": "QUASI! — Il gioco della precisione",
+  "short_name": "QUASI!",
+  "description": "Dieci mini-sfide di precisione, memoria e riflessi.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#fff7e9",
+  "theme_color": "#7558ff",
+  "icons": [
+    {
+      "src": "assets/favicon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/quasi-favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
