@@ -21,6 +21,16 @@ const feedbackLayer = $('#feedback-layer');
 const howDialog = $('#how-dialog');
 const compareDialog = $('#compare-dialog');
 
+function syncViewportHeight() {
+  const height = window.visualViewport?.height || window.innerHeight;
+  document.documentElement.style.setProperty('--app-height', `${Math.round(height)}px`);
+}
+
+syncViewportHeight();
+window.addEventListener('resize', syncViewportHeight, { passive: true });
+window.addEventListener('orientationchange', syncViewportHeight, { passive: true });
+window.visualViewport?.addEventListener('resize', syncViewportHeight, { passive: true });
+
 const storedBest = Number(localStorage.getItem('quasi-best')) || 0;
 const storedSound = localStorage.getItem('quasi-sound');
 
@@ -109,7 +119,9 @@ function updateHomeAfterLiveGame(score) {
 
 function showScreen(screen) {
   screens.forEach((item) => item.classList.toggle('is-active', item === screen));
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  document.body.classList.toggle('is-playing', screen === gameScreen);
+  syncViewportHeight();
+  window.scrollTo({ top: 0, behavior: screen === gameScreen ? 'auto' : 'smooth' });
   $('#app').focus({ preventScroll: true });
 }
 
@@ -186,6 +198,7 @@ function makeCanvas(height = 330) {
   canvas.className = 'game-canvas';
   canvas.width = 900;
   canvas.height = height;
+  canvas.style.setProperty('--canvas-ratio', `${canvas.width} / ${canvas.height}`);
   canvas.setAttribute('aria-label', 'Area interattiva della sfida');
   stage.append(canvas);
   const pointFromEvent = (event) => {
@@ -1022,18 +1035,76 @@ function makeChallengeUrl(score) {
 }
 
 async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const field = document.createElement('textarea');
-    field.value = text;
-    document.body.append(field);
-    field.select();
-    const copied = document.execCommand('copy');
-    field.remove();
-    return copied;
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch { /* Safari may require the synchronous fallback below. */ }
   }
+
+  const field = document.createElement('textarea');
+  const activeElement = document.activeElement;
+  field.value = text;
+  field.readOnly = true;
+  field.setAttribute('aria-hidden', 'true');
+  Object.assign(field.style, {
+    position: 'fixed',
+    inset: '0 auto auto 0',
+    width: '1px',
+    height: '1px',
+    padding: '0',
+    border: '0',
+    opacity: '0.01',
+    fontSize: '16px',
+    userSelect: 'text',
+    WebkitUserSelect: 'text',
+  });
+  document.body.append(field);
+  field.focus({ preventScroll: true });
+  field.select();
+  field.setSelectionRange(0, field.value.length);
+
+  let copied = false;
+  try { copied = document.execCommand('copy'); } catch { copied = false; }
+  field.remove();
+  activeElement?.focus?.({ preventScroll: true });
+  return copied;
+}
+
+function isTouchShareDevice() {
+  return window.matchMedia?.('(pointer: coarse)').matches === true;
+}
+
+function offerManualCopy(url) {
+  window.prompt('Copia questo link e invialo al tuo amico:', url);
+}
+
+async function shareChallengeLink(shareData, copiedMessage) {
+  if (isTouchShareDevice() && navigator.share) {
+    try {
+      await navigator.share(shareData);
+      return true;
+    } catch (error) {
+      if (error.name === 'AbortError') return false;
+    }
+  }
+
+  if (await copyText(shareData.url)) {
+    showToast(copiedMessage);
+    return true;
+  }
+
+  if (navigator.share) {
+    try {
+      await navigator.share(shareData);
+      return true;
+    } catch (error) {
+      if (error.name === 'AbortError') return false;
+    }
+  }
+
+  offerManualCopy(shareData.url);
+  return true;
 }
 
 async function compareFriendResult() {
@@ -1072,15 +1143,7 @@ async function launchLiveChallenge() {
     text: 'Apri il link: affronteremo insieme gli stessi 10 livelli, con partenza sincronizzata.',
     url,
   };
-  if (navigator.share) {
-    try { await navigator.share(shareData); }
-    catch (error) {
-      if (error.name === 'AbortError') return;
-      if (await copyText(url)) showToast('Link copiato: invialo subito al tuo amico!');
-      else { showToast('Impossibile condividere la sfida.'); return; }
-    }
-  } else if (await copyText(url)) showToast('Link copiato: invialo subito al tuo amico!');
-  else { showToast('Impossibile copiare il link della sfida.'); return; }
+  if (!await shareChallengeLink(shareData, 'Link copiato: invialo subito al tuo amico!')) return;
   startGame({ mode: 'challenge-live-host', deck, seed, startAt });
 }
 
@@ -1093,12 +1156,8 @@ async function shareResult() {
       text: `Ho totalizzato ${score}/100. Riesci a battermi negli stessi 10 livelli?`,
       url,
     };
-    if (navigator.canShare?.({ files: [file] })) shareData.files = [file];
-    if (navigator.share) {
-      try { await navigator.share(shareData); return; } catch (error) { if (error.name === 'AbortError') return; }
-    }
-    if (await copyText(url)) showToast('Link della sfida copiato!');
-    else showToast('Impossibile copiare il link della sfida.');
+    if (isTouchShareDevice() && navigator.canShare?.({ files: [file] })) shareData.files = [file];
+    await shareChallengeLink(shareData, 'Link della sfida copiato!');
     return;
   }
   if(navigator.share&&navigator.canShare?.({files:[file]})){
