@@ -34,9 +34,17 @@
           <p class="eyebrow"><span></span> 10 PROVE · ZERO SCUSE</p>
           <h1 id="home-title">QUANTO SEI<br /><em>PRECISO?</em></h1>
           <p class="hero-intro">Timer, geometria, memoria e riflessi. Avvicinati alla perfezione in dieci mini-sfide da pochi secondi.</p>
+          <div class="challenge-invite" id="challenge-invite" hidden>
+            <span>SFIDA RICEVUTA</span>
+            <strong><b id="opponent-score">—</b>/100 DA BATTERE</strong>
+            <small>Dieci prove identiche. Un solo vincitore.</small>
+          </div>
           <div class="hero-actions">
             <button class="primary-button" id="start-button" type="button">
-              <span>INIZIA LA PARTITA</span><b aria-hidden="true">→</b>
+              <span>GIOCATORE SINGOLO</span><b aria-hidden="true">→</b>
+            </button>
+            <button class="secondary-button challenge-mode-button" id="challenge-button" type="button">
+              <span>SFIDA UN AMICO</span><b aria-hidden="true">↗</b>
             </button>
             <button class="text-button" id="how-button" type="button">COME SI GIOCA?</button>
           </div>
@@ -109,6 +117,7 @@
         <li><b>10 sfide casuali</b><span>Ogni partita mescola precisione, memoria, coordinazione e riflessi.</span></li>
         <li><b>Da 0 a 100</b><span>Ogni gesto viene confrontato con il risultato ideale. Nessun bonus misterioso.</span></li>
         <li><b>Un grado finale</b><span>La media delle prove determina il tuo voto, da E fino all'introvabile S+.</span></li>
+        <li><b>Sfida un amico</b><span>Condividi il link, entrate nella lobby e iniziate insieme le stesse dieci prove.</span></li>
       </ol>
       <button class="primary-button dialog-start" type="button"><span>HO CAPITO, GIOCHIAMO</span><b>→</b></button>
     </dialog>
