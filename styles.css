@@ -9,7 +9,7 @@
   --yellow: #ffc93d;
   --mint: #26c9a7;
   --line: rgba(23, 21, 19, 0.17);
-  --shadow: 8px 8px 0 var(--ink);
+  --shadow: 0 7px 0 var(--ink);
   --radius: 28px;
   font-family: Inter, ui-rounded, "Arial Rounded MT Bold", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--ink);
@@ -224,8 +224,8 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
 @keyframes countdown-tick { from { opacity: .15; transform: translateY(-10px) scale(.9); } }
 @keyframes live-pulse { to { transform: translateX(194%); } }
 
-.big-action { width: min(360px, 90%); min-height: 78px; border: 2px solid var(--ink); border-radius: 18px; background: var(--challenge-color, var(--orange)); box-shadow: 6px 6px 0 var(--ink); cursor: pointer; font-size: 1rem; font-weight: 1000; letter-spacing: .08em; touch-action: none; }
-.big-action:active { transform: translate(4px,4px); box-shadow: 2px 2px 0 var(--ink); }
+.big-action { width: min(360px, 90%); min-height: 78px; border: 2px solid var(--ink); border-radius: 18px; background: var(--challenge-color, var(--orange)); box-shadow: 0 5px 0 var(--ink); cursor: pointer; font-size: 1rem; font-weight: 1000; letter-spacing: .08em; touch-action: none; }
+.big-action:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--ink); }
 .big-action:disabled { opacity: .55; cursor: wait; }
 .confirm-button { min-width: 190px; min-height: 51px; border: 2px solid var(--ink); border-radius: 13px; background: var(--ink); color: white; cursor: pointer; font-size: .72rem; font-weight: 1000; letter-spacing: .1em; }
 .confirm-button:disabled { opacity: .35; cursor: default; }
@@ -238,7 +238,7 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
 .game-canvas { width: auto; height: auto; max-width: 100%; max-height: 100%; aspect-ratio: var(--canvas-ratio, 900 / 330); display: block; border-radius: 20px; cursor: crosshair; touch-action: none; }
 .stage-note { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); margin: 0; width: 100%; text-align: center; font-size: .68rem; font-weight: 900; letter-spacing: .08em; color: rgba(23,21,19,.5); pointer-events: none; }
 
-.rhythm-pad { width: min(280px, 70vw); aspect-ratio: 1; border: 3px solid var(--ink); border-radius: 50%; background: var(--violet); box-shadow: 9px 9px 0 var(--ink); cursor: pointer; font-size: 1rem; color: white; font-weight: 1000; letter-spacing: .12em; transition: transform .08s, background .08s; }
+.rhythm-pad { width: min(280px, 70vw); aspect-ratio: 1; border: 3px solid var(--ink); border-radius: 50%; background: var(--violet); box-shadow: 0 7px 0 var(--ink); cursor: pointer; font-size: 1rem; color: white; font-weight: 1000; letter-spacing: .12em; transition: transform .08s, background .08s; }
 .rhythm-pad.is-hit { transform: scale(.94); background: var(--yellow); color: var(--ink); }
 .rhythm-dots { position: absolute; bottom: 13px; display: flex; gap: 8px; }
 .rhythm-dots i { width: 11px; height: 11px; border: 2px solid var(--ink); border-radius: 50%; background: white; }
@@ -344,8 +344,8 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
 .result-copy > p:not(.eyebrow) { margin: 28px 0; font-size: 1.08rem; font-weight: 650; line-height: 1.55; }
 .result-actions { align-items: stretch; flex-direction: column; max-width: 300px; }
 .result-actions .primary-button { width: 100%; }
-.result-card-wrap { display: grid; place-items: center; perspective: 1000px; }
-#result-canvas { width: min(100%, 490px); height: auto; border: 3px solid var(--ink); border-radius: 24px; box-shadow: 13px 13px 0 var(--ink); transform: rotate(1.5deg); }
+.result-card-wrap { display: grid; place-items: center; padding: 8px 14px 18px; }
+#result-canvas { width: min(100%, 490px); height: auto; border: 3px solid var(--ink); border-radius: 24px; box-shadow: 0 9px 0 var(--ink), 0 17px 32px rgba(23,21,19,.12); transform: none; }
 
 dialog { width: min(610px, calc(100% - 32px)); padding: 40px; border: 3px solid var(--ink); border-radius: 26px; background: var(--paper); box-shadow: 10px 10px 0 var(--ink); color: var(--ink); }
 dialog::backdrop { background: rgba(23,21,19,.57); backdrop-filter: blur(6px); }
@@ -571,7 +571,7 @@ dialog li span { color: rgba(23,21,19,.65); line-height: 1.4; font-size: .86rem;
   .home-footer { margin-inline: -11px; }
   .stat { padding: 11px 3px; }
   .stat strong { font-size: 1.25rem; }
-  .challenge-card { min-height: 590px; border-radius: 22px; box-shadow: 5px 5px 0 var(--ink); }
+  .challenge-card { min-height: 590px; border-radius: 24px; box-shadow: 0 5px 0 var(--ink); }
   .challenge-heading { padding: 24px 16px 10px; }
   .challenge-heading h2 { font-size: 2.05rem; }
   .challenge-heading p { font-size: .87rem; }
