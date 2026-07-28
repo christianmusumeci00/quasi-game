@@ -19,6 +19,7 @@ const stage = $('#challenge-stage');
 const controls = $('#challenge-controls');
 const feedbackLayer = $('#feedback-layer');
 const howDialog = $('#how-dialog');
+const compareDialog = $('#compare-dialog');
 
 const storedBest = Number(localStorage.getItem('quasi-best')) || 0;
 const storedSound = localStorage.getItem('quasi-sound');
@@ -63,7 +64,16 @@ const incomingChallenge = decodedChallenge
 
 if (incomingChallenge) {
   $('#challenge-invite').hidden = false;
-  if (incomingChallenge.score === null && incomingChallenge.startAt) {
+  const storedLiveResult = localStorage.getItem(`quasi-live-result:${incomingChallenge.seed}`);
+  if (storedLiveResult !== null) {
+    const savedScore = Number(storedLiveResult);
+    if (incomingChallenge.score !== null) {
+      $('#challenge-invite > span').textContent = 'CONFRONTO';
+      $('.challenge-invite strong').innerHTML = `<b>${savedScore}</b> TU · <b>${incomingChallenge.score}</b> AMICO`;
+      $('.challenge-invite small').textContent = savedScore > incomingChallenge.score ? 'Hai vinto la sfida!' : savedScore < incomingChallenge.score ? 'Questa volta ha vinto il tuo amico.' : 'Parità perfetta.';
+      $('#challenge-button span').textContent = 'GIOCA LA RIVINCITA';
+    } else updateHomeAfterLiveGame(savedScore);
+  } else if (incomingChallenge.score === null && incomingChallenge.startAt) {
     $('#challenge-invite > span').textContent = 'SFIDA LIVE';
     $('.challenge-invite strong').innerHTML = '<b id="live-home-clock">--:--</b> ALLA PARTENZA';
     $('.challenge-invite small').textContent = 'Entra ora: la partita inizierà per tutti allo stesso istante.';
@@ -75,15 +85,8 @@ if (incomingChallenge) {
     updateHomeClock();
     setInterval(updateHomeClock, 500);
   } else {
-    const savedScore = Number(localStorage.getItem(`quasi-live-result:${incomingChallenge.seed}`));
     $('#opponent-score').textContent = incomingChallenge.score;
     $('#challenge-button span').textContent = 'ACCETTA LA SFIDA';
-    if (Number.isFinite(savedScore) && localStorage.getItem(`quasi-live-result:${incomingChallenge.seed}`) !== null) {
-      $('#challenge-invite > span').textContent = 'CONFRONTO';
-      $('.challenge-invite strong').innerHTML = `<b>${savedScore}</b> TU · <b>${incomingChallenge.score}</b> AMICO`;
-      $('.challenge-invite small').textContent = savedScore > incomingChallenge.score ? 'Hai vinto la sfida!' : savedScore < incomingChallenge.score ? 'Questa volta ha vinto il tuo amico.' : 'Parità perfetta.';
-      $('#challenge-button span').textContent = 'GIOCA LA RIVINCITA';
-    }
   }
   $('#challenge-button').classList.add('has-invite');
 }
@@ -93,6 +96,15 @@ function formatClock(milliseconds) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function updateHomeAfterLiveGame(score) {
+  $('#challenge-invite').hidden = false;
+  $('#challenge-invite > span').textContent = 'SFIDA FINITA';
+  $('.challenge-invite strong').innerHTML = `<b>${score}</b>/100 IL TUO RISULTATO`;
+  $('.challenge-invite small').textContent = 'Condividi il risultato oppure crea una nuova sfida.';
+  $('#challenge-button span').textContent = 'NUOVA SFIDA LIVE';
+  $('#challenge-button').classList.add('has-invite');
 }
 
 function showScreen(screen) {
@@ -137,6 +149,28 @@ function addKeyHandler(keys, handler) {
   };
   window.addEventListener('keydown', listener);
   registerCleanup(() => window.removeEventListener('keydown', listener));
+}
+
+function addKeyHoldHandler(code, onPress, onRelease) {
+  let pressed = false;
+  const keyDown = (event) => {
+    if (event.code !== code || event.repeat || !feedbackLayer.hidden) return;
+    event.preventDefault();
+    pressed = true;
+    onPress(event);
+  };
+  const keyUp = (event) => {
+    if (event.code !== code || !pressed) return;
+    event.preventDefault();
+    pressed = false;
+    onRelease(event);
+  };
+  window.addEventListener('keydown', keyDown);
+  window.addEventListener('keyup', keyUp);
+  registerCleanup(() => {
+    window.removeEventListener('keydown', keyDown);
+    window.removeEventListener('keyup', keyUp);
+  });
 }
 
 function makeButton(label, className = 'confirm-button') {
@@ -253,10 +287,6 @@ function renderLiveWaiting(onReady) {
     </div>
   `;
   stage.append(waiting);
-  const hint = document.createElement('p');
-  hint.className = 'countdown-hint';
-  hint.textContent = 'Tutti ricevono gli stessi 10 livelli';
-  controls.append(hint);
   const interval = setInterval(() => {
     const remaining = state.startAt - Date.now();
     if (remaining > 0) {
@@ -332,11 +362,14 @@ function finishGame() {
     $('#header-best').textContent = String(finalScore);
   }
   const { grade, label } = getGrade(finalScore);
+  $('#compare-button').hidden = true;
   if (state.mode.startsWith('challenge-live')) {
     localStorage.setItem(`quasi-live-result:${state.challengeSeed}`, String(finalScore));
+    updateHomeAfterLiveGame(finalScore);
     $('#result-title').innerHTML = 'SFIDA<br><em>COMPLETATA.</em>';
     $('#result-summary').textContent = `${finalScore}/100 · Grado ${grade}. Condividi il risultato per confrontarlo con gli amici.`;
     $('#share-button span').textContent = 'CONDIVIDI RISULTATO';
+    $('#compare-button').hidden = false;
   } else if (state.mode === 'challenge-guest') {
     const difference = finalScore - state.opponentScore;
     if (difference > 0) {
@@ -484,6 +517,7 @@ function renderHold(config) {
   stage.append(display);
   const button = makeButton('TIENI PREMUTO', 'big-action');
   controls.append(button);
+  $('#keyboard-hint').textContent = 'Tieni premuto SPAZIO oppure il pulsante';
   let startTime = 0;
   let holding = false;
   let raf;
@@ -494,10 +528,10 @@ function renderHold(config) {
     else raf = requestAnimationFrame(update);
   };
   const press = (event) => {
-    event.preventDefault();
+    event?.preventDefault();
     if (holding || state.locked) return;
     holding = true; startTime = performance.now(); button.textContent = 'ORA RILASCIA…';
-    button.setPointerCapture?.(event.pointerId);
+    if (event?.pointerId !== undefined) button.setPointerCapture?.(event.pointerId);
     tone(390); raf = requestAnimationFrame(update);
   };
   const release = () => {
@@ -511,6 +545,7 @@ function renderHold(config) {
   button.addEventListener('pointerdown', press);
   button.addEventListener('pointerup', release);
   button.addEventListener('pointercancel', release);
+  addKeyHoldHandler('Space', press, release);
   registerCleanup(() => cancelAnimationFrame(raf));
 }
 
@@ -854,7 +889,10 @@ function renderReaction(config) {
     const symbols=['●','▲','◆','■','✚'].filter(symbol=>symbol!==targetSymbol);let count=0;const cycle=()=>{if(count++>=2+Math.floor(random()*3)){activate();return;}$('strong',zone).textContent=symbols[Math.floor(random()*symbols.length)];timeout=setTimeout(cycle,pace);};timeout=setTimeout(cycle,Math.max(420,pace));
   }
   registerCleanup(()=>clearTimeout(timeout));
-  zone.addEventListener('click',()=>{if(state.locked)return;if(!ready){clearTimeout(timeout);challengeResult(0,'Falsa partenza: hai toccato troppo presto.');return;}const ms=performance.now()-readyTime;const score=accuracy(Math.max(0,ms-155),370);challengeResult(score,`Tempo di reazione: ${Math.round(ms)} ms.`);});
+  const react=()=>{if(state.locked)return;if(!ready){clearTimeout(timeout);challengeResult(0,'Falsa partenza: hai toccato troppo presto.');return;}const ms=performance.now()-readyTime;const score=accuracy(Math.max(0,ms-155),370);challengeResult(score,`Tempo di reazione: ${Math.round(ms)} ms.`);};
+  zone.addEventListener('click',react);
+  addKeyHandler(['Space'],react);
+  $('#keyboard-hint').textContent='CLIC oppure SPAZIO per reagire';
 }
 
 function renderIntercept(zone, config = {}) {
@@ -863,7 +901,10 @@ function renderIntercept(zone, config = {}) {
   const dot=$('.moving-dot',zone);let position=0;let start=performance.now();let raf;
   const duration=config.duration || 2350;
   const move=(now)=>{position=clamp((now-start)/duration,0,1);dot.style.left=`${position*100}%`;dot.style.top=`${50+Math.sin(position*Math.PI*2)*27}%`;if(position>=1){challengeResult(0,'Il punto è scappato oltre il bersaglio.');return;}raf=requestAnimationFrame(move);};
-  zone.addEventListener('click',()=>{cancelAnimationFrame(raf);const error=Math.abs(position-.5);challengeResult(accuracy(error,(config.band || 14)*.0064),`Distanza dalla zona perfetta: ${(error*100).toFixed(1)}%.`);});
+  const stop=()=>{if(state.locked)return;cancelAnimationFrame(raf);const error=Math.abs(position-.5);challengeResult(accuracy(error,(config.band || 14)*.0064),`Distanza dalla zona perfetta: ${(error*100).toFixed(1)}%.`);};
+  zone.addEventListener('click',stop);
+  addKeyHandler(['Space'],stop);
+  $('#keyboard-hint').textContent='CLIC oppure SPAZIO per fermare il punto';
   raf=requestAnimationFrame(move);registerCleanup(()=>cancelAnimationFrame(raf));
 }
 
@@ -950,7 +991,7 @@ function drawResultCard(score, grade) {
   ctx.font='900 25px system-ui';ctx.letterSpacing='4px';ctx.fillText(cardSubtitle,72,174);
   ctx.font='1000 310px system-ui';ctx.fillStyle='#7558ff';ctx.fillText(String(score),54,500);
   ctx.fillStyle='#171513';ctx.font='1000 75px system-ui';ctx.fillText('/100',630,487);
-  ctx.save();ctx.translate(884,187);ctx.rotate(.08);ctx.fillStyle='#ffc93d';ctx.strokeStyle='#171513';ctx.lineWidth=7;roundRect(ctx,-105,-77,210,154,28);ctx.fill();ctx.stroke();ctx.fillStyle='#171513';ctx.font='1000 78px system-ui';ctx.textAlign='center';ctx.fillText(grade,0,27);ctx.restore();
+  ctx.save();ctx.translate(930,160);ctx.fillStyle='#ffc93d';ctx.strokeStyle='#171513';ctx.lineWidth=7;ctx.beginPath();ctx.arc(0,0,82,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#171513';ctx.font='1000 74px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(grade,0,5);ctx.restore();
   ctx.textAlign='left';ctx.fillStyle='#171513';ctx.font='1000 38px system-ui';ctx.fillText(scoreMessage(score),70,575);
   ctx.font='800 23px system-ui';ctx.fillStyle='rgba(23,21,19,.62)';ctx.fillText(`${stars} STELLE QUASI · BEST ${state.best}`,70,620);
   const top=690;state.results.forEach((result,index)=>{const y=top+index*54;ctx.fillStyle=index%2?'rgba(117,88,255,.08)':'rgba(255,91,61,.08)';roundRect(ctx,65,y-34,950,47,10);ctx.fill();ctx.fillStyle='#171513';ctx.font='800 21px system-ui';ctx.textAlign='left';ctx.fillText(`${String(index+1).padStart(2,'0')}  ${result.challenge.name.toUpperCase()}`,82,y-2);ctx.textAlign='right';ctx.font='1000 25px system-ui';ctx.fillStyle=result.score>=90?'#ff5b3d':'#171513';ctx.fillText(String(result.score),990,y-2);});
@@ -987,12 +1028,35 @@ async function copyText(text) {
   } catch {
     const field = document.createElement('textarea');
     field.value = text;
-    field.style.cssText = 'position:fixed;left:-9999px;opacity:0';
     document.body.append(field);
     field.select();
     const copied = document.execCommand('copy');
     field.remove();
     return copied;
+  }
+}
+
+async function compareFriendResult() {
+  const input = $('#compare-input');
+  let value = input.value.trim();
+  if (!value && navigator.clipboard?.readText) {
+    try { value = (await navigator.clipboard.readText()).trim(); input.value = value; } catch { /* Manual paste remains available. */ }
+  }
+  const output = $('#compare-output');
+  try {
+    const url = new URL(value);
+    const payload = decodeChallenge(url.searchParams.get('challenge') || '', new Set(challengeCatalog.keys()));
+    if (!payload || payload.score === null) throw new Error('missing-result');
+    if (payload.seed !== state.challengeSeed) throw new Error('different-match');
+    const ownScore = Math.round(mean(state.results.map((result) => result.score)));
+    const difference = ownScore - payload.score;
+    output.className = `compare-output ${difference > 0 ? 'is-win' : difference < 0 ? 'is-loss' : 'is-draw'}`;
+    output.innerHTML = `<strong>${difference > 0 ? `HAI VINTO DI ${difference}` : difference < 0 ? `HAI PERSO DI ${Math.abs(difference)}` : 'PARITÀ PERFETTA'}</strong><span>TU ${ownScore} · AMICO ${payload.score}</span>`;
+    output.hidden = false;
+  } catch (error) {
+    output.className = 'compare-output is-error';
+    output.innerHTML = `<strong>LINK NON VALIDO</strong><span>${error.message === 'different-match' ? 'Questo risultato appartiene a un’altra sfida.' : 'Incolla il link risultato condiviso dal tuo amico.'}</span>`;
+    output.hidden = false;
   }
 }
 
@@ -1053,8 +1117,7 @@ function showToast(message){const toast=$('#toast');toast.textContent=message;to
 $('#start-button').addEventListener('click',()=>startGame({mode:'solo'}));
 $('#challenge-button').addEventListener('click',()=>{
   if (incomingChallenge) {
-    const hasLocalResult = incomingChallenge.score !== null
-      && localStorage.getItem(`quasi-live-result:${incomingChallenge.seed}`) !== null;
+    const hasLocalResult = localStorage.getItem(`quasi-live-result:${incomingChallenge.seed}`) !== null;
     if (hasLocalResult) { launchLiveChallenge(); return; }
     const live = incomingChallenge.score === null && incomingChallenge.startAt;
     startGame({
@@ -1074,9 +1137,12 @@ $('#restart-button').addEventListener('click',()=>{
   } else startGame({mode:state.mode});
 });
 $('#how-button').addEventListener('click',()=>howDialog.showModal());
-$('.dialog-close').addEventListener('click',()=>howDialog.close());
+$$('.dialog-close').forEach((button)=>button.addEventListener('click',()=>button.closest('dialog').close()));
 $('#next-button').addEventListener('click',()=>{feedbackLayer.hidden=true;if(state.round===9)finishGame();else{state.round+=1;renderChallenge();}});
 $('#share-button').addEventListener('click',shareResult);
+$('#compare-button').addEventListener('click',()=>{$('#compare-output').hidden=true;$('#compare-input').value='';compareDialog.showModal();$('#compare-input').focus();});
+$('#compare-submit').addEventListener('click',compareFriendResult);
+$('#compare-input').addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();compareFriendResult();}});
 $('#download-button').addEventListener('click',downloadResult);
 $('#sound-toggle').addEventListener('click',()=>{state.sound=!state.sound;localStorage.setItem('quasi-sound',state.sound?'on':'off');$('#sound-toggle').setAttribute('aria-pressed',String(state.sound));$('#sound-toggle').setAttribute('aria-label',state.sound?'Disattiva suoni':'Attiva suoni');if(state.sound)tone(600);});
 $$('[data-go-home]').forEach(button=>button.addEventListener('click',()=>{clearChallenge();feedbackLayer.hidden=true;showScreen(homeScreen);}));

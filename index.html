@@ -99,6 +99,7 @@
           <p id="result-summary">Una performance chirurgica.</p>
           <div class="result-actions">
             <button class="primary-button" id="share-button" type="button"><span>CONDIVIDI RISULTATO</span><b>↗</b></button>
+            <button class="secondary-button" id="compare-button" type="button" hidden>CONFRONTA CON UN AMICO</button>
             <button class="secondary-button" id="download-button" type="button">SCARICA CARTA</button>
             <button class="text-button" id="restart-button" type="button">GIOCA ANCORA</button>
           </div>
@@ -120,6 +121,16 @@
         <li><b>Sfida un amico</b><span>Condividi il link, entrate nella lobby e iniziate insieme le stesse dieci prove.</span></li>
       </ol>
       <button class="primary-button dialog-start" type="button"><span>HO CAPITO, GIOCHIAMO</span><b>→</b></button>
+    </dialog>
+
+    <dialog class="compare-dialog" id="compare-dialog">
+      <button class="dialog-close" type="button" aria-label="Chiudi">×</button>
+      <p class="eyebrow"><span></span> RISULTATI SFIDA</p>
+      <h2>CHI È STATO<br />PIÙ PRECISO?</h2>
+      <p>Fatti inviare il link risultato del tuo amico e incollalo qui.</p>
+      <input class="compare-input" id="compare-input" type="url" inputmode="url" autocomplete="off" placeholder="Incolla il link risultato" />
+      <button class="primary-button compare-submit" id="compare-submit" type="button"><span>CONFRONTA</span><b>→</b></button>
+      <div class="compare-output" id="compare-output" role="status" hidden></div>
     </dialog>
 
     <div class="feedback-layer" id="feedback-layer" aria-live="assertive" hidden>

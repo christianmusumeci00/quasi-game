@@ -68,7 +68,7 @@ Per ridurre la monotonia, rispetto alla partita precedente vengono scelte 7 mecc
 
 ## Sfida un amico
 
-La modalità sfida non richiede account o server. Chi crea la sfida condivide subito un link che contiene gli identificativi delle dieci prove, un seed casuale e l'orario comune di partenza. Entrambi entrano nella lobby e il gioco inizia automaticamente allo stesso istante, con gli stessi livelli e le stesse configurazioni casuali. Al termine ciascun giocatore può condividere il proprio risultato; aprendolo sullo stesso dispositivo usato per giocare viene mostrato il confronto diretto.
+La modalità sfida non richiede account o server. Chi crea la sfida condivide subito un link che contiene gli identificativi delle dieci prove, un seed casuale e l'orario comune di partenza. Entrambi entrano nella lobby e il gioco inizia automaticamente allo stesso istante, con gli stessi livelli e le stesse configurazioni casuali. Al termine ciascun giocatore può condividere il proprio risultato; l'altro può aprirlo oppure incollarlo nel pannello **Confronta con un amico** per vedere vittoria, sconfitta, pareggio e differenza punti.
 
 ## Compatibilità
 
