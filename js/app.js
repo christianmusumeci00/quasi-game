@@ -10,6 +10,8 @@ const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const mean = (items) => items.length ? items.reduce((sum, value) => sum + value, 0) / items.length : 0;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const challengeCatalog = new Map(CHALLENGES.map((challenge) => [challenge.id, challenge]));
+['count-7', 'count-11', 'count-14-fast', 'count-9-fakes', 'count-16-fakes']
+  .forEach((legacyId) => challengeCatalog.set(legacyId, challengeCatalog.get('count-unknown')));
 
 const screens = $$('.screen');
 const homeScreen = $('#home-screen');
@@ -1023,10 +1025,14 @@ function renderColorMatch(config) {
 function renderCountFlash(config) {
   const panel=document.createElement('div');panel.className='flash-panel';panel.innerHTML='<span>PREPARATI</span>';stage.append(panel);
   const answers=document.createElement('div');answers.className='count-answers';controls.append(answers);
-  let shown=0;let step=0;let timeout;const totalSteps=config.distractors?config.count+Math.max(3,Math.round(config.count*.35)):config.count;
-  const sequence=Array.from({length:totalSteps},(_,index)=>index<config.count?'target':'distractor').sort(()=>random()-.5);
-  const flash=()=>{if(step>=sequence.length){panel.classList.remove('flash-target','flash-distractor');panel.innerHTML='<span>QUANTI ERANO?</span>';showAnswers();return;}const type=sequence[step++];if(type==='target')shown+=1;panel.className=`flash-panel flash-${type}`;panel.innerHTML=`<i style="left:${18+random()*64}%;top:${22+random()*56}%"></i>`;tone(type==='target'?620:260,.045);timeout=setTimeout(()=>{panel.className='flash-panel';panel.replaceChildren();timeout=setTimeout(flash,Math.max(55,config.pace*.42));},Math.max(75,config.pace*.58));};
-  const showAnswers=()=>{const options=[config.count-2,config.count-1,config.count,config.count+1,config.count+2].filter(value=>value>0).sort(()=>random()-.5);options.forEach(value=>{const button=makeButton(String(value),'count-answer');button.addEventListener('click',()=>{const error=Math.abs(value-config.count);challengeResult(error===0?100:accuracy(error,1.45),value===config.count?`Esatto: erano ${config.count}.`:`Erano ${config.count}, ne hai indicati ${value}.`);});answers.append(button);});};
+  const count=Math.floor(config.minCount+random()*(config.maxCount-config.minCount+1));
+  const pace=Math.round(config.minPace+random()*(config.maxPace-config.minPace));
+  const distractors=random()<config.distractorChance;
+  let step=0;let timeout;const totalSteps=distractors?count+Math.max(3,Math.round(count*.35)):count;
+  const sequence=Array.from({length:totalSteps},(_,index)=>index<count?'target':'distractor');
+  for(let index=sequence.length-1;index>0;index-=1){const swapWith=Math.floor(random()*(index+1));[sequence[index],sequence[swapWith]]=[sequence[swapWith],sequence[index]];}
+  const flash=()=>{if(step>=sequence.length){panel.classList.remove('flash-target','flash-distractor');panel.innerHTML='<span>QUANTI ERANO?</span>';showAnswers();return;}const type=sequence[step++];panel.className=`flash-panel flash-${type}`;panel.innerHTML=`<i style="left:${18+random()*64}%;top:${22+random()*56}%"></i>`;tone(type==='target'?620:260,.045);timeout=setTimeout(()=>{panel.className='flash-panel';panel.replaceChildren();timeout=setTimeout(flash,Math.max(55,pace*.42));},Math.max(75,pace*.58));};
+  const showAnswers=()=>{const options=[count-2,count-1,count,count+1,count+2].filter(value=>value>0).sort(()=>random()-.5);options.forEach(value=>{const button=makeButton(String(value),'count-answer');button.addEventListener('click',()=>{const error=Math.abs(value-count);challengeResult(error===0?100:accuracy(error,1.45),value===count?`Esatto: erano ${count}.`:`Erano ${count}, ne hai indicati ${value}.`);});answers.append(button);});};
   timeout=setTimeout(flash,650);registerCleanup(()=>clearTimeout(timeout));
 }
 

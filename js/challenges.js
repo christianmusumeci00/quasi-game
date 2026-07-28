@@ -68,6 +68,7 @@ const timerLevels = [
   ['timer-0900', 'Sotto il secondo', 0.9, true],
   ['timer-6100', 'Sei e un decimo', 6.1, true],
   ['timer-3333', 'Tre, tre, tre', 3.333, true],
+  ['timer-2650', 'Due secondi e sessantacinque', 2.65, true],
   ['timer-5750', 'Cinque e tre quarti', 5.75, true],
   ['timer-12000', 'Dodici lunghi secondi', 12, true],
   ['timer-blind-2400', 'Buio rapido', 2.4, false],
@@ -105,6 +106,7 @@ const rhythmLevels = [
 const splitLevels = [
   ['split-v-25', 'Un quarto verticale', 'vertical', .25], ['split-v-60', 'Sessanta e quaranta', 'vertical', .6],
   ['split-v-75', 'Tre quarti verticali', 'vertical', .75], ['split-v-42', 'Taglio al quarantadue', 'vertical', .42],
+  ['split-v-62', 'Sezione aurea', 'vertical', .618],
   ['split-v-18', 'Fetta sottile', 'vertical', .18], ['split-h-30', 'Trenta dall’alto', 'horizontal', .3],
   ['split-h-65', 'Sessantacinque in basso', 'horizontal', .65], ['split-h-80', 'Quattro quinti', 'horizontal', .8],
   ['split-h-45', 'Quasi metà', 'horizontal', .45], ['split-h-12', 'Dodici percento', 'horizontal', .12],
@@ -129,15 +131,16 @@ const measureLevels = [
   ['height-224', 'Grattacielo', 'height', 224, 0],
 ].map(([id, name, mode, target, angle]) => ({ id, family: 'Misura', name, instruction: mode === 'memory' ? 'Memorizza la misura prima che il riferimento scompaia.' : `Riproduci esattamente la misura del modello ${mode === 'line' ? 'tracciando la tua linea' : 'regolando la forma'}.`, kind: 'measure', config: { mode, target, angle } }));
 
-const angleLevels = [15, 25, 30, 60, 72, 105, 120, 135, 150, 165, 18, 54, 108, 144, 172].map((target, index) => ({
+const angleLevels = [15, 25, 30, 60, 72, 105, 120, 135, 150, 165, 18, 54, 108, 144, 172, 33].map((target, index) => ({
   id: `angle-extra-${target}`, family: 'Angoli',
-  name: ['Quindici sottili','Venticinque gradi','Trenta netti','Sessanta precisi','Pentagono invisibile','Angolo ottuso','Centoventi','Tre quarti di giro','Centocinquanta','Quasi piatto','Diciotto gradi','Cinquantaquattro','Centootto','Centoquarantaquattro','Due gradi dal limite'][index],
+  name: ['Quindici sottili','Venticinque gradi','Trenta netti','Sessanta precisi','Pentagono invisibile','Angolo ottuso','Centoventi','Tre quarti di giro','Centocinquanta','Quasi piatto','Diciotto gradi','Cinquantaquattro','Centootto','Centoquarantaquattro','Due gradi dal limite','Trentatré precisi'][index],
   instruction: `Crea un angolo di ${target}° senza usare tacche.`, kind: 'angle', config: { target },
 }));
 
 const percentLevels = [
   ['percent-13', 'Tredici percento', 13, 'bar'], ['percent-22', 'Ventidue percento', 22, 'bar'],
   ['percent-49', 'Un soffio sotto metà', 49, 'bar'], ['percent-58', 'Cinquantotto percento', 58, 'bar'],
+  ['percent-31', 'Quasi un terzo', 31, 'bar'],
   ['percent-77', 'Settantasette percento', 77, 'bar'], ['percent-91', 'Quasi tutto', 91, 'bar'],
   ['grid-23', 'Ventitré celle', 23, 'grid'], ['grid-46', 'Mosaico al quarantasei', 46, 'grid'],
   ['grid-72', 'Mosaico al settantadue', 72, 'grid'], ['ratio-40', 'Rapporto due a tre', 40, 'ratio'],
@@ -197,11 +200,14 @@ const colorLevels = [
   ['color-saturation', 'Intensità del blu', 'saturation', 207, 64, 52],
 ].map(([id, name, mode, hue, saturation, lightness]) => ({ id, family: 'Colore', name, instruction: `Regola ${mode === 'hue' ? 'la tonalità' : mode === 'saturation' ? 'l’intensità' : 'la luminosità'} finché i due colori sembrano identici.`, kind: 'colorMatch', config: { mode, hue, saturation, lightness } }));
 
-const countingLevels = [
-  ['count-7', 'Sette lampi', 7, 360, false], ['count-11', 'Undici lampi', 11, 260, false],
-  ['count-14-fast', 'Quattordici scintille', 14, 185, false], ['count-9-fakes', 'Lampi con esche', 9, 330, true],
-  ['count-16-fakes', 'Tempesta di lampi', 16, 180, true],
-].map(([id, name, count, pace, distractors]) => ({ id, family: 'Conteggio', name, instruction: distractors ? 'Conta soltanto i lampi gialli, ignorando quelli viola.' : 'Conta quanti lampi appaiono sullo schermo.', kind: 'countFlash', config: { count, pace, distractors } }));
+const countingLevels = [{
+  id: 'count-unknown',
+  family: 'Conteggio',
+  name: 'Lampi incogniti',
+  instruction: 'Conta soltanto i lampi gialli. Quantità e ritmo cambiano a ogni tentativo.',
+  kind: 'countFlash',
+  config: { minCount: 6, maxCount: 15, minPace: 180, maxPace: 310, distractorChance: .55 },
+}];
 
 export const CHALLENGES = [
   ...BASE_CHALLENGES,
