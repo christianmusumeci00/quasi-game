@@ -23,17 +23,21 @@ const feedbackLayer = $('#feedback-layer');
 const howDialog = $('#how-dialog');
 const compareDialog = $('#compare-dialog');
 const trainingDialog = $('#training-dialog');
+const trainingSearch = $('#training-search');
 let trainingFamily = 'Tutte';
 
 function syncViewportHeight() {
-  const height = window.visualViewport?.height || window.innerHeight;
+  const viewport = window.visualViewport;
+  const height = viewport?.height || window.innerHeight;
   document.documentElement.style.setProperty('--app-height', `${Math.round(height)}px`);
+  document.documentElement.style.setProperty('--viewport-offset-top', `${Math.round(viewport?.offsetTop || 0)}px`);
 }
 
 syncViewportHeight();
 window.addEventListener('resize', syncViewportHeight, { passive: true });
 window.addEventListener('orientationchange', syncViewportHeight, { passive: true });
 window.visualViewport?.addEventListener('resize', syncViewportHeight, { passive: true });
+window.visualViewport?.addEventListener('scroll', syncViewportHeight, { passive: true });
 
 const storedBest = Number(localStorage.getItem('quasi-best')) || 0;
 const storedSound = localStorage.getItem('quasi-sound');
@@ -1240,7 +1244,7 @@ function renderTrainingFilters() {
 }
 
 function renderTrainingCatalog() {
-  const query = normalizedSearch($('#training-search').value);
+  const query = normalizedSearch(trainingSearch.value);
   const matches = CHALLENGES.filter((challenge) => {
     if (trainingFamily !== 'Tutte' && challenge.family !== trainingFamily) return false;
     return !query || normalizedSearch(`${challenge.name} ${challenge.instruction} ${challenge.family}`).includes(query);
@@ -1267,12 +1271,14 @@ function renderTrainingCatalog() {
     card.append(family, title, instruction, score);
     return card;
   }));
+  grid.scrollTop = 0;
   grid.hidden = matches.length === 0;
   $('#training-empty').hidden = matches.length !== 0;
   $('#training-count').textContent = `${matches.length} ${matches.length === 1 ? 'LIVELLO DISPONIBILE' : 'LIVELLI DISPONIBILI'}`;
 }
 
 function openTrainingDialog() {
+  trainingDialog.classList.remove('is-searching');
   renderTrainingFilters();
   renderTrainingCatalog();
   if (!trainingDialog.open) trainingDialog.showModal();
@@ -1280,6 +1286,8 @@ function openTrainingDialog() {
 }
 
 function startTrainingLevel(challenge) {
+  trainingSearch.blur();
+  trainingDialog.classList.remove('is-searching');
   startGame({ mode: 'training', deck: [challenge], seed: createChallengeSeed() });
 }
 
@@ -1292,7 +1300,10 @@ function returnToTrainingCatalog() {
 
 $('#start-button').addEventListener('click',()=>startGame({mode:'solo'}));
 $('#training-button').addEventListener('click', openTrainingDialog);
-$('#training-search').addEventListener('input', renderTrainingCatalog);
+trainingSearch.addEventListener('input', renderTrainingCatalog);
+trainingSearch.addEventListener('focus', () => trainingDialog.classList.add('is-searching'));
+trainingSearch.addEventListener('blur', () => trainingDialog.classList.remove('is-searching'));
+trainingDialog.addEventListener('close', () => trainingDialog.classList.remove('is-searching'));
 $('#training-filters').addEventListener('click', (event) => {
   const button = event.target.closest('.training-filter');
   if (!button) return;
