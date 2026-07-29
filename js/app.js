@@ -10,6 +10,11 @@ const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const mean = (items) => items.length ? items.reduce((sum, value) => sum + value, 0) / items.length : 0;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const challengeCatalog = new Map(CHALLENGES.map((challenge) => [challenge.id, challenge]));
+const pageParams = new URLSearchParams(window.location.search);
+const qaLevelId = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  ? pageParams.get('qa-level')
+  : null;
+const qaCountdown = Boolean(qaLevelId && pageParams.has('qa-countdown'));
 ['count-7', 'count-11', 'count-14-fast', 'count-9-fakes', 'count-16-fakes']
   .forEach((legacyId) => challengeCatalog.set(legacyId, challengeCatalog.get('count-unknown')));
 
@@ -72,7 +77,7 @@ $('#header-best').textContent = storedBest ? `${storedBest}` : '—';
 $('#sound-toggle').setAttribute('aria-pressed', String(state.sound));
 
 const decodedChallenge = decodeChallenge(
-  new URLSearchParams(window.location.search).get('challenge') || '',
+  pageParams.get('challenge') || '',
   new Set(challengeCatalog.keys()),
 );
 const incomingChallenge = decodedChallenge
@@ -216,10 +221,10 @@ function makeButton(label, className = 'confirm-button') {
   return button;
 }
 
-function makeCanvas(height = 330) {
+function makeCanvas(height = 330, width = 900) {
   const canvas = document.createElement('canvas');
   canvas.className = 'game-canvas';
-  canvas.width = 900;
+  canvas.width = width;
   canvas.height = height;
   canvas.style.setProperty('--canvas-ratio', `${canvas.width} / ${canvas.height}`);
   canvas.setAttribute('aria-label', 'Area interattiva della sfida');
@@ -310,7 +315,11 @@ function renderChallenge() {
   $('#challenge-category').textContent = challenge.family;
   $('#challenge-title').textContent = challenge.name;
   $('#challenge-instruction').textContent = challenge.instruction;
-  $('.challenge-card').style.setProperty('--challenge-color', FAMILY_COLORS[challenge.family]);
+  const challengeCard = $('.challenge-card');
+  challengeCard.style.setProperty('--challenge-color', FAMILY_COLORS[challenge.family]);
+  challengeCard.dataset.challengeId = challenge.id;
+  challengeCard.dataset.kind = challenge.kind;
+  challengeCard.dataset.variant = challenge.config.mode || challenge.config.shape || challenge.config.path || '';
 
   const renderer = renderers[challenge.kind];
   if (!renderer) {
@@ -318,7 +327,7 @@ function renderChallenge() {
     return;
   }
   const beginChallenge = () => {
-    if (startsAutomatically(challenge)) renderStartCountdown(() => renderer(challenge.config));
+    if (startsAutomatically(challenge) && (!qaLevelId || qaCountdown)) renderStartCountdown(() => renderer(challenge.config));
     else renderer(challenge.config);
   };
   if (state.round === 0 && state.startAt && state.startAt > Date.now()) renderLiveWaiting(beginChallenge);
@@ -670,7 +679,9 @@ function renderPredictBeat(config) {
 }
 
 function renderDraw(config) {
-  const { canvas, ctx, pointFromEvent } = makeCanvas();
+  // Il foglio da disegno è meno panoramico degli altri canvas: su telefono
+  // resta abbastanza alto da rendere comodi cerchi, otto e spirali.
+  const { canvas, ctx, pointFromEvent } = makeCanvas(420, 680);
   const confirm = makeButton('DISEGNA PER VALUTARE');
   confirm.disabled = true;
   controls.append(confirm);
@@ -682,12 +693,13 @@ function renderDraw(config) {
     ctx.fillStyle = 'rgba(255,255,255,.42)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.strokeStyle = 'rgba(23,21,19,.18)'; ctx.lineWidth = 3; ctx.setLineDash([10, 12]);
     if (config.shape === 'line') {
-      ctx.beginPath(); ctx.moveTo(130, 250); ctx.lineTo(770, 80); ctx.stroke();
+      const [start, end] = drawLineGuide(canvas.width, canvas.height);
+      ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
       ctx.setLineDash([]); ctx.fillStyle = '#ff5b3d';
-      [ {x:130,y:250}, {x:770,y:80} ].forEach((p) => { ctx.beginPath(); ctx.arc(p.x,p.y,11,0,Math.PI*2); ctx.fill(); });
+      [start, end].forEach((p) => { ctx.beginPath(); ctx.arc(p.x,p.y,11,0,Math.PI*2); ctx.fill(); });
     } else if (config.shape === 'spiral') {
       ctx.beginPath();
-      spiralPoints().forEach((p, index) => index ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y)); ctx.stroke();
+      spiralPoints(canvas.width, canvas.height).forEach((p, index) => index ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y)); ctx.stroke();
     }
     ctx.setLineDash([]);
   };
@@ -700,11 +712,13 @@ function renderDraw(config) {
   background();
   canvas.addEventListener('pointerdown', (event) => { drawing = true; points.length = 0; points.push(pointFromEvent(event)); canvas.setPointerCapture(event.pointerId); redraw(); });
   canvas.addEventListener('pointermove', (event) => { if (!drawing) return; points.push(pointFromEvent(event)); redraw(); });
-  canvas.addEventListener('pointerup', () => { drawing = false; if (points.length > 8) { confirm.disabled = false; confirm.textContent = 'VALUTA IL DISEGNO'; } });
-  confirm.addEventListener('click', () => evaluateDrawing(config.shape, points));
+  const finishDrawing = () => { drawing = false; if (points.length > 8) { confirm.disabled = false; confirm.textContent = 'VALUTA IL DISEGNO'; } };
+  canvas.addEventListener('pointerup', finishDrawing);
+  canvas.addEventListener('pointercancel', () => { drawing = false; });
+  confirm.addEventListener('click', () => evaluateDrawing(config.shape, points, canvas));
 }
 
-function evaluateDrawing(shape, points) {
+function evaluateDrawing(shape, points, canvas) {
   if (points.length < 8) return;
   const xs = points.map((p) => p.x); const ys = points.map((p) => p.y);
   const minX = Math.min(...xs); const maxX = Math.max(...xs); const minY = Math.min(...ys); const maxY = Math.max(...ys);
@@ -725,16 +739,16 @@ function evaluateDrawing(shape, points) {
     const combined = edgeError * .5 + aspectError * .3 + closure * .2;
     score = accuracy(combined, .17); detail = `Differenza fra i lati: ${(aspectError * 100).toFixed(1)}%.`;
   } else if (shape === 'line') {
-    const a = { x: 130, y: 250 }; const b = { x: 770, y: 80 };
+    const [a, b] = drawLineGuide(canvas.width, canvas.height);
     const deviations = points.map((p) => pointToSegment(p, a, b));
     const ends = (distance(points[0], a) + distance(points.at(-1), b)) / 2;
     const error = mean(deviations) * .72 + ends * .28;
-    score = accuracy(error, 42); detail = `Deviazione media: ${mean(deviations).toFixed(1)} px.`;
+    score = accuracy(error, canvas.width * .047); detail = `Deviazione media: ${mean(deviations).toFixed(1)} px.`;
   } else if (shape === 'spiral') {
-    const guide = spiralPoints();
+    const guide = spiralPoints(canvas.width, canvas.height);
     const deviations = points.map((p) => Math.min(...guide.filter((_, i) => i % 3 === 0).map((g) => distance(p,g))));
     const endError = distance(points.at(-1), guide.at(-1));
-    score = accuracy(mean(deviations) * .8 + endError * .2, 37); detail = `Distanza media dalla spirale: ${mean(deviations).toFixed(1)} px.`;
+    score = accuracy(mean(deviations) * .8 + endError * .2, Math.min(canvas.width, canvas.height) * .112); detail = `Distanza media dalla spirale: ${mean(deviations).toFixed(1)} px.`;
   } else {
     const aspectError = Math.abs(width / Math.max(height, 1) - .72);
     const center = { x: (minX+maxX)/2, y: (minY+maxY)/2 };
@@ -746,11 +760,19 @@ function evaluateDrawing(shape, points) {
   challengeResult(score, detail);
 }
 
-function spiralPoints() {
+function drawLineGuide(width, height) {
+  return [
+    { x: width * .12, y: height * .78 },
+    { x: width * .88, y: height * .22 },
+  ];
+}
+
+function spiralPoints(width = 900, height = 330) {
+  const outerRadius = Math.min(width, height) * .455;
   return Array.from({ length: 150 }, (_, index) => {
     const t = index / 149 * Math.PI * 4.6;
-    const radius = 150 - index * .82;
-    return { x: 450 + Math.cos(t) * radius, y: 170 + Math.sin(t) * radius };
+    const radius = outerRadius * (1 - index / 149 * .815);
+    return { x: width / 2 + Math.cos(t) * radius, y: height / 2 + Math.sin(t) * radius };
   });
 }
 
@@ -767,13 +789,12 @@ function renderSplit(config) {
   zone.innerHTML = '<div class="split-fill"></div><div class="split-line"></div><div class="split-labels"><span>A</span><span>B</span></div>';
   stage.append(zone);
   const confirm = makeButton('CONFERMA IL TAGLIO'); confirm.disabled = true; controls.append(confirm);
-  let value = config.mode === 'horizontal'
-    ? (random() < .5 ? .16 + random() * .17 : .67 + random() * .17)
-    : .5;
-  if (config.mode === 'horizontal') {
-    $('.split-fill', zone).style.height = `${value * 100}%`;
-    $('.split-line', zone).style.top = `${value * 100}%`;
-  }
+  let value;
+  do { value = .12 + random() * .76; } while (Math.abs(value - config.target) < .14);
+  const initialProperty = config.mode === 'horizontal' ? 'height' : 'width';
+  $('.split-fill', zone).style[initialProperty] = `${value * 100}%`;
+  if (config.mode === 'horizontal') $('.split-line', zone).style.top = `${value * 100}%`;
+  else $('.split-line', zone).style.left = `${value * 100}%`;
   const update = (event) => {
     const rect = zone.getBoundingClientRect();
     value = config.mode === 'horizontal' ? clamp((event.clientY-rect.top)/rect.height,0,1) : clamp((event.clientX-rect.left)/rect.width,0,1);
@@ -837,13 +858,13 @@ function renderCenter(config) {
 
 function renderMeasure(config) {
   const wrap=document.createElement('div');wrap.className='measure-stage';stage.append(wrap);
-  const confirm=makeButton('CONFERMA LA MISURA');controls.append(confirm);
+  const confirm=makeButton('CONFERMA LA MISURA');confirm.disabled=true;controls.append(confirm);
   let value=config.target*.65;
   if(config.mode==='line'||config.mode==='memory'){
     wrap.innerHTML=`<span class="measure-label ref">RIFERIMENTO</span><div class="measure-reference ${config.mode==='memory'?'memory-hide':''}"></div><span class="measure-label you">LA TUA LINEA</span><div class="user-line"><i class="line-handle"></i></div>`;
     const ref=$('.measure-reference',wrap), user=$('.user-line',wrap);ref.style.width=`${config.target}px`;ref.style.transform=`rotate(${config.angle||0}deg)`;user.style.width=`${value}px`;
     let dragging=false;
-    const update=(event)=>{const rect=user.getBoundingClientRect();value=clamp(event.clientX-rect.left,4,360);user.style.width=`${value}px`;};
+    const update=(event)=>{const rect=user.getBoundingClientRect();value=clamp(event.clientX-rect.left,4,360);user.style.width=`${value}px`;confirm.disabled=false;};
     $('.line-handle',wrap).addEventListener('pointerdown',(event)=>{dragging=true;event.target.setPointerCapture(event.pointerId);});
     $('.line-handle',wrap).addEventListener('pointermove',(event)=>{if(dragging)update(event);});
     $('.line-handle',wrap).addEventListener('pointerup',()=>dragging=false);
@@ -855,43 +876,50 @@ function renderMeasure(config) {
     else{ref.style.height=`${config.target}px`;user.style.height=`${value}px`;}
     visual.append(ref,user);wrap.append(visual);
     const slider=document.createElement('input');slider.type='range';slider.className='measure-slider';slider.min='40';slider.max='250';slider.value=value;slider.setAttribute('aria-label','Regola la misura');wrap.append(slider);
-    slider.addEventListener('input',()=>{value=Number(slider.value);if(config.mode==='diameter')user.style.width=user.style.height=`${value}px`;else user.style.height=`${value}px`;});
+    slider.addEventListener('input',()=>{value=Number(slider.value);if(config.mode==='diameter')user.style.width=user.style.height=`${value}px`;else user.style.height=`${value}px`;confirm.disabled=false;});
   }
   confirm.addEventListener('click',()=>{const error=Math.abs(value-config.target);challengeResult(accuracy(error,config.target*.13),`Scarto dalla misura: ${error.toFixed(1)} px.`);});
 }
 
 function renderAngle(config) {
   const dial=document.createElement('div');dial.className='angle-dial';
-  const base=document.createElement('i');base.className='angle-arm base';base.style.transform=`rotate(${config.base||0}deg)`;
+  const baseAngle=config.base||0;
+  const targetMagnitude=smallestAngleBetween(config.target,baseAngle);
+  const base=document.createElement('i');base.className='angle-arm base';base.style.transform=`rotate(${baseAngle}deg)`;
   const user=document.createElement('i');user.className='angle-arm user';user.style.transform='rotate(20deg)';
   dial.append(base,user);
   if(config.reference){const ref=document.createElement('i');ref.className='angle-arm reference';ref.style.transform=`rotate(${config.target}deg)`;dial.append(ref);}
   const center=document.createElement('i');center.className='angle-center';
   const valueLabel=document.createElement('span');valueLabel.className='angle-value';valueLabel.textContent=config.reference?'COPIA IL MODELLO':`TARGET ${config.base ? '90° RELATIVI' : config.target+'°'}`;
   dial.append(center,valueLabel);stage.append(dial);
-  const confirm=makeButton('CONFERMA L’ANGOLO');controls.append(confirm);
+  const confirm=makeButton('CONFERMA L’ANGOLO');confirm.disabled=true;controls.append(confirm);
   let value=20;
-  const update=(event)=>{const rect=dial.getBoundingClientRect();let degrees=Math.atan2(event.clientY-(rect.top+rect.height/2),event.clientX-(rect.left+rect.width/2))*180/Math.PI;if(degrees<0)degrees+=360;value=degrees;user.style.transform=`rotate(${value}deg)`;};
+  const update=(event)=>{const rect=dial.getBoundingClientRect();let degrees=Math.atan2(event.clientY-(rect.top+rect.height/2),event.clientX-(rect.left+rect.width/2))*180/Math.PI;if(degrees<0)degrees+=360;value=degrees;user.style.transform=`rotate(${value}deg)`;confirm.disabled=false;};
   dial.addEventListener('pointerdown',(event)=>{dial.setPointerCapture(event.pointerId);update(event);});dial.addEventListener('pointermove',(event)=>{if(dial.hasPointerCapture(event.pointerId))update(event);});
-  confirm.addEventListener('click',()=>{let error=Math.abs(value-config.target);error=Math.min(error,360-error);challengeResult(accuracy(error,12),`Scarto angolare: ${error.toFixed(1)}°.`);});
+  confirm.addEventListener('click',()=>{const chosenMagnitude=smallestAngleBetween(value,baseAngle);const error=Math.abs(chosenMagnitude-targetMagnitude);challengeResult(accuracy(error,12),`Scarto angolare: ${error.toFixed(1)}°.`);});
+}
+
+function smallestAngleBetween(first,second) {
+  const difference=Math.abs(first-second)%360;
+  return Math.min(difference,360-difference);
 }
 
 function renderPercent(config) {
   const wrap=document.createElement('div');wrap.className=`percent-stage mode-${config.mode}`;stage.append(wrap);
-  const confirm=makeButton('CONFERMA LA STIMA');controls.append(confirm);
+  const confirm=makeButton('CONFERMA LA STIMA');confirm.disabled=true;controls.append(confirm);
   let value=50;
   if(config.mode==='grid'){
     const grid=document.createElement('div');grid.className='percent-grid';grid.innerHTML=Array.from({length:100},()=>'<i></i>').join('');wrap.append(grid);
-    const update=(event)=>{const cell=event.target.closest('i');if(!cell)return;value=[...grid.children].indexOf(cell)+1;[...grid.children].forEach((item,index)=>item.classList.toggle('fill',index<value));};
+    const update=(event)=>{const cell=event.target.closest('i');if(!cell)return;value=[...grid.children].indexOf(cell)+1;[...grid.children].forEach((item,index)=>item.classList.toggle('fill',index<value));confirm.disabled=false;};
     grid.addEventListener('pointerover',(event)=>{if(event.buttons)update(event);});grid.addEventListener('pointerdown',update);
   }else if(config.mode==='pie'){
     const pie=document.createElement('div');pie.className='pie-control';pie.dataset.value='?';wrap.append(pie);
-    const update=(event)=>{const rect=pie.getBoundingClientRect();let deg=Math.atan2(event.clientX-(rect.left+rect.width/2),-(event.clientY-(rect.top+rect.height/2)))*180/Math.PI;if(deg<0)deg+=360;value=deg/3.6;pie.style.setProperty('--pie',`${value}%`);};
+    const update=(event)=>{const rect=pie.getBoundingClientRect();let deg=Math.atan2(event.clientX-(rect.left+rect.width/2),-(event.clientY-(rect.top+rect.height/2)))*180/Math.PI;if(deg<0)deg+=360;value=deg/3.6;pie.style.setProperty('--pie',`${value}%`);confirm.disabled=false;};
     pie.addEventListener('pointerdown',(event)=>{pie.setPointerCapture(event.pointerId);update(event);});pie.addEventListener('pointermove',(event)=>{if(pie.hasPointerCapture(event.pointerId))update(event);});
   }else{
     const bar=document.createElement('div');bar.className=config.mode==='ratio'?'ratio-bar':'percent-bar';bar.innerHTML='<div class="percent-fill"></div><div class="percent-marker"></div><span class="percent-readout">?</span>';wrap.append(bar);
     if(config.mode==='ratio'){$('.percent-fill',bar).style.background='#ffc93d';bar.style.background='#7558ff';}
-    const update=(event)=>{const rect=bar.getBoundingClientRect();value=clamp((event.clientX-rect.left)/rect.width*100,0,100);$('.percent-fill',bar).style.width=`${value}%`;$('.percent-marker',bar).style.left=`${value}%`;};
+    const update=(event)=>{const rect=bar.getBoundingClientRect();value=clamp((event.clientX-rect.left)/rect.width*100,0,100);$('.percent-fill',bar).style.width=`${value}%`;$('.percent-marker',bar).style.left=`${value}%`;confirm.disabled=false;};
     bar.addEventListener('pointerdown',(event)=>{bar.setPointerCapture(event.pointerId);update(event);});bar.addEventListener('pointermove',(event)=>{if(bar.hasPointerCapture(event.pointerId))update(event);});
   }
   confirm.addEventListener('click',()=>{const error=Math.abs(value-config.target);challengeResult(accuracy(error,7.5),`Hai scelto ${value.toFixed(1)}% · scarto ${error.toFixed(1)} punti.`);});
@@ -928,7 +956,8 @@ function renderSteady(config) {
   const draw=(now=performance.now())=>{ctx.clearRect(0,0,900,330);const target=targetAt(now);ctx.fillStyle='#26c9a7';ctx.beginPath();ctx.arc(target.x,target.y,radius,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#171513';ctx.lineWidth=4;ctx.stroke();ctx.fillStyle='#ff5b3d';ctx.beginPath();ctx.arc(pointer.x,pointer.y,8,0,Math.PI*2);ctx.fill();if(holding){samples.push(distance(pointer,target));if(now-start>=config.duration){holding=false;const inside=samples.filter(d=>d<=radius).length/samples.length;challengeResult(inside*100,`Sei rimasto nel bersaglio per il ${(inside*100).toFixed(1)}% del tempo.`);return;}}raf=requestAnimationFrame(draw);};
   canvas.addEventListener('pointerdown',(event)=>{if(holding)return;pointer=pointFromEvent(event);holding=true;start=performance.now();samples.length=0;canvas.setPointerCapture(event.pointerId);});
   canvas.addEventListener('pointermove',(event)=>{pointer=pointFromEvent(event);});
-  canvas.addEventListener('pointerup',()=>{if(holding){holding=false;challengeResult(mean(samples.map(d=>d<=radius?1:0))*70,`Hai rilasciato prima della fine.`);}});
+  const release=()=>{if(holding){holding=false;challengeResult(mean(samples.map(d=>d<=radius?1:0))*70,`Hai rilasciato prima della fine.`);}};
+  canvas.addEventListener('pointerup',release);canvas.addEventListener('pointercancel',release);
   raf=requestAnimationFrame(draw);registerCleanup(()=>cancelAnimationFrame(raf));
   const note=document.createElement('p');note.className='stage-note';note.textContent=`TIENI PREMUTO E SEGUI IL BERSAGLIO PER ${(config.duration/1000).toFixed(1).replace('.',',')} SECONDI`;stage.append(note);
 }
@@ -1010,9 +1039,9 @@ function renderBalance(config) {
   const {canvas,ctx,pointFromEvent}=makeCanvas();const total=config.weights.reduce((sum,[,weight])=>sum+weight,0);const ideal=config.weights.reduce((sum,[x,weight])=>sum+x*weight,0)/total;
   let fulcrum;
   do { fulcrum=120+random()*660; } while(Math.abs(fulcrum-ideal)<105);
-  const confirm=makeButton('BILANCIA LA TRAVE');controls.append(confirm);
+  const confirm=makeButton('BILANCIA LA TRAVE');confirm.disabled=true;controls.append(confirm);
   const draw=()=>{ctx.clearRect(0,0,900,330);ctx.strokeStyle='#171513';ctx.lineWidth=8;ctx.beginPath();ctx.moveTo(90,175);ctx.lineTo(810,175);ctx.stroke();config.weights.forEach(([x,weight],index)=>{ctx.fillStyle=index%2?'#7558ff':'#ff5b3d';ctx.fillRect(x-22,175-weight*18,44,weight*18);ctx.strokeRect(x-22,175-weight*18,44,weight*18);ctx.fillStyle='#171513';ctx.font='900 18px system-ui';ctx.textAlign='center';ctx.fillText(`${weight}×`,x,205);});ctx.fillStyle='#ffc93d';ctx.beginPath();ctx.moveTo(fulcrum,185);ctx.lineTo(fulcrum-32,270);ctx.lineTo(fulcrum+32,270);ctx.closePath();ctx.fill();ctx.stroke();};draw();
-  canvas.addEventListener('pointerdown',(event)=>{canvas.setPointerCapture(event.pointerId);fulcrum=clamp(pointFromEvent(event).x,100,800);draw();});canvas.addEventListener('pointermove',(event)=>{if(canvas.hasPointerCapture(event.pointerId)){fulcrum=clamp(pointFromEvent(event).x,100,800);draw();}});
+  canvas.addEventListener('pointerdown',(event)=>{canvas.setPointerCapture(event.pointerId);fulcrum=clamp(pointFromEvent(event).x,100,800);confirm.disabled=false;draw();});canvas.addEventListener('pointermove',(event)=>{if(canvas.hasPointerCapture(event.pointerId)){fulcrum=clamp(pointFromEvent(event).x,100,800);draw();}});
   confirm.addEventListener('click',()=>{const error=Math.abs(fulcrum-ideal);challengeResult(accuracy(error,48),`Il fulcro ideale era a ${error.toFixed(1)} px dalla tua scelta.`);});
 }
 
@@ -1021,8 +1050,9 @@ function renderColorMatch(config) {
   const slider=document.createElement('input');slider.type='range';slider.className='color-slider';slider.setAttribute('aria-label','Regola il colore');
   const target=config.mode==='hue'?config.hue:config.mode==='saturation'?config.saturation:config.lightness;slider.min='0';slider.max=config.mode==='hue'?'360':'100';slider.value=config.mode==='hue'?180:50;controls.append(slider);
   const color=(value)=>`hsl(${config.mode==='hue'?value:config.hue} ${config.mode==='saturation'?value:config.saturation}% ${config.mode==='lightness'?value:config.lightness}%)`;
-  reference.style.background=color(target);const update=()=>attempt.style.background=color(Number(slider.value));update();slider.addEventListener('input',update);
-  const confirm=makeButton('CONFERMA IL COLORE');controls.append(confirm);
+  reference.style.background=color(target);const update=()=>attempt.style.background=color(Number(slider.value));update();
+  const confirm=makeButton('CONFERMA IL COLORE');confirm.disabled=true;controls.append(confirm);
+  slider.addEventListener('input',()=>{update();confirm.disabled=false;});
   confirm.addEventListener('click',()=>{let error=Math.abs(Number(slider.value)-target);if(config.mode==='hue')error=Math.min(error,360-error);challengeResult(accuracy(error,config.mode==='hue'?28:11),`Scarto ${config.mode==='hue'?'cromatico':'percettivo'}: ${error.toFixed(1)}${config.mode==='hue'?'°':' punti'}.`);});
 }
 
@@ -1357,4 +1387,27 @@ $('#sound-toggle').addEventListener('click',()=>{state.sound=!state.sound;localS
 $$('[data-go-home]').forEach(button=>button.addEventListener('click',()=>{clearChallenge();feedbackLayer.hidden=true;showScreen(homeScreen);}));
 
 // Exposed only for lightweight automated smoke tests; it has no gameplay side effects.
-window.QUASI = { challengeCount: CHALLENGES.length, buildDeck, getGrade };
+window.QUASI = {
+  challengeCount: CHALLENGES.length,
+  challengeIds: CHALLENGES.map((challenge) => challenge.id),
+  buildDeck,
+  getGrade,
+};
+
+// Localhost-only entry point used by the responsive level-by-level audit.
+if (qaLevelId && challengeCatalog.has(qaLevelId)) {
+  startTrainingLevel(challengeCatalog.get(qaLevelId));
+
+  const qaPicker = document.createElement('select');
+  qaPicker.id = 'qa-level-picker';
+  qaPicker.setAttribute('aria-label', 'QA level picker');
+  qaPicker.innerHTML = CHALLENGES.map((challenge) =>
+    `<option value="${challenge.id}">${challenge.name}</option>`
+  ).join('');
+  qaPicker.value = qaLevelId;
+  qaPicker.addEventListener('change', () => {
+    feedbackLayer.hidden = true;
+    startTrainingLevel(challengeCatalog.get(qaPicker.value));
+  });
+  document.body.append(qaPicker);
+}

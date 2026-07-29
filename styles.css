@@ -37,6 +37,20 @@ body {
     var(--paper);
 }
 
+body.is-playing { overflow: hidden; }
+
+#qa-level-picker {
+  position: fixed;
+  z-index: 100;
+  right: 4px;
+  bottom: 4px;
+  width: 2px;
+  height: 2px;
+  padding: 0;
+  border: 0;
+  opacity: .01;
+}
+
 button, input { font: inherit; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 button { color: inherit; }
 button:focus-visible, [tabindex]:focus-visible { outline: 4px solid var(--violet); outline-offset: 4px; }
@@ -217,13 +231,13 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
 .running-score span { display: block; font-size: .6rem; font-weight: 900; letter-spacing: .12em; }
 .running-score strong { font-size: 2rem; letter-spacing: -.08em; }
 
-.challenge-card { position: relative; overflow: hidden; min-height: 610px; border: 2px solid var(--ink); border-radius: var(--radius); background: rgba(255,255,255,.47); box-shadow: var(--shadow); }
+.challenge-card { position: relative; min-width: 0; overflow: hidden; min-height: 610px; border: 2px solid var(--ink); border-radius: var(--radius); background: rgba(255,255,255,.47); box-shadow: var(--shadow); }
 .challenge-heading { padding: 30px 34px 18px; text-align: center; }
 .category-chip { display: inline-block; padding: 7px 12px; border: 1.5px solid var(--ink); border-radius: 99px; background: var(--challenge-color, var(--orange)); font-size: .6rem; font-weight: 1000; letter-spacing: .13em; text-transform: uppercase; }
 .challenge-heading h2 { margin: 16px 0 8px; font-size: clamp(2rem, 5vw, 3.25rem); line-height: .94; letter-spacing: -.065em; text-transform: uppercase; }
 .challenge-heading p { max-width: 610px; margin: 0 auto; color: rgba(23,21,19,.68); font-weight: 650; line-height: 1.45; }
-.challenge-stage { position: relative; min-height: 330px; margin: 0 24px; display: grid; place-items: center; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-.challenge-controls { position: relative; z-index: 5; min-height: 78px; display: flex; align-items: center; justify-content: center; padding: 12px 24px 25px; }
+.challenge-stage { position: relative; min-width: 0; min-height: 330px; margin: 0 24px; display: grid; place-items: center; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.challenge-controls { position: relative; z-index: 5; min-width: 0; min-height: 78px; display: flex; align-items: center; justify-content: center; padding: 12px 24px 25px; }
 .keyboard-hint { min-height: 18px; margin: 18px 0 0; color: rgba(23,21,19,.55); text-align: center; font-size: .7rem; font-weight: 800; letter-spacing: .08em; }
 
 .start-countdown { width: min(560px, 94%); min-height: 290px; display: grid; place-items: center; animation: countdown-in .3s ease-out both; }
@@ -550,11 +564,31 @@ dialog li span { color: rgba(23,21,19,.65); line-height: 1.4; font-size: .86rem;
   body.is-playing .running-score strong { font-size: 1.55rem; }
 
   body.is-playing .challenge-card {
+    --compact-stage-height: 280px;
+    --compact-canvas-width: 764px;
     min-height: 0;
     height: 100%;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto;
   }
+
+  body.is-playing .challenge-card[data-kind="timer"],
+  body.is-playing .challenge-card[data-kind="hold"] { --compact-stage-height: 205px; }
+  body.is-playing .challenge-card[data-kind="sweep"],
+  body.is-playing .challenge-card[data-kind="trace"],
+  body.is-playing .challenge-card[data-kind="steady"],
+  body.is-playing .challenge-card[data-kind="precision"],
+  body.is-playing .challenge-card[data-kind="symmetry"],
+  body.is-playing .challenge-card[data-kind="balance"],
+  body.is-playing .challenge-card[data-kind="center"] { --compact-stage-height: 225px; --compact-canvas-width: 614px; }
+  body.is-playing .challenge-card[data-kind="draw"] { --compact-stage-height: 270px; --compact-canvas-width: 437px; }
+  body.is-playing .challenge-card[data-kind="measure"] { --compact-stage-height: 285px; --compact-measure-width: 670px; }
+  body.is-playing .challenge-card[data-kind="rhythm"],
+  body.is-playing .challenge-card[data-kind="predictBeat"],
+  body.is-playing .challenge-card[data-kind="angle"],
+  body.is-playing .challenge-card[data-kind="memory"] { --compact-stage-height: 330px; }
+  body.is-playing .challenge-card[data-kind="percent"][data-variant="grid"],
+  body.is-playing .challenge-card[data-kind="percent"][data-variant="pie"] { --compact-stage-height: 330px; }
 
   body.is-playing .challenge-heading { padding: 13px 16px 8px; }
   body.is-playing .challenge-heading h2 { margin: 8px 0 4px; font-size: clamp(1.45rem, 5.5vw, 2.25rem); }
@@ -564,12 +598,14 @@ dialog li span { color: rgba(23,21,19,.65); line-height: 1.4; font-size: .86rem;
   body.is-playing .challenge-stage {
     width: auto;
     min-height: 0;
-    height: 100%;
+    height: min(100%, var(--compact-stage-height));
+    align-self: center;
     margin: 0 10px;
     overflow: hidden;
   }
 
-  body.is-playing .challenge-stage > * { max-width: 100%; max-height: 100%; }
+  body.is-playing .challenge-stage > * { min-width: 0; max-width: 100%; max-height: 100%; }
+  body.is-playing .game-canvas { width: min(100%, var(--compact-canvas-width)); }
   body.is-playing .start-countdown { min-height: 0; height: 100%; }
   body.is-playing .challenge-controls { min-height: 54px; padding: 6px 12px 10px; }
   body.is-playing .keyboard-hint { display: none; }
@@ -579,10 +615,12 @@ dialog li span { color: rgba(23,21,19,.65); line-height: 1.4; font-size: .86rem;
   body.is-playing .split-zone { height: auto; aspect-ratio: 640 / 190; }
   body.is-playing .split-zone.is-horizontal { height: auto; aspect-ratio: 420 / 245; }
   body.is-playing .percent-bar,
-  body.is-playing .ratio-bar { height: auto; aspect-ratio: 640 / 105; }
+  body.is-playing .ratio-bar { height: clamp(78px, 12dvh, 105px); aspect-ratio: auto; }
   body.is-playing .center-shape { height: auto; }
-  body.is-playing .measure-stage { height: auto; }
-  body.is-playing .percent-stage { height: auto; aspect-ratio: 650 / 280; }
+  body.is-playing .measure-stage { width: min(100%, var(--compact-measure-width, 670px)); height: auto; }
+  body.is-playing .angle-dial { width: min(330px, 78vw); }
+  body.is-playing .memory-grid { width: min(330px, 80vw); }
+  body.is-playing .percent-stage { height: 100%; aspect-ratio: auto; }
   body.is-playing .percent-stage.mode-grid { width: min(330px, 88vw); height: auto; aspect-ratio: 1; }
   body.is-playing .reaction-zone { height: auto; aspect-ratio: 2 / 1; }
   body.is-playing .flash-panel { height: auto; aspect-ratio: 2 / 1; }
@@ -696,11 +734,23 @@ dialog li span { color: rgba(23,21,19,.65); line-height: 1.4; font-size: .86rem;
   body.is-playing .running-score strong { font-size: 1.25rem; }
   body.is-playing .challenge-heading { padding: 7px 12px 5px; }
   body.is-playing .challenge-heading h2 { margin: 5px 0 2px; font-size: clamp(1.05rem, 4.5vw, 1.5rem); }
-  body.is-playing .challenge-heading p { font-size: .67rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  body.is-playing .challenge-heading p { font-size: .64rem; line-height: 1.12; white-space: normal; overflow: visible; }
   body.is-playing .category-chip { padding: 3px 7px; font-size: .45rem; }
-  body.is-playing .challenge-controls { min-height: 43px; padding: 3px 8px 5px; }
-  body.is-playing .big-action { min-height: 43px; }
-  body.is-playing .confirm-button { min-height: 39px; }
+  body.is-playing .challenge-card { --compact-stage-height: 220px; --compact-canvas-width: 600px; }
+  body.is-playing .challenge-card[data-kind="timer"],
+  body.is-playing .challenge-card[data-kind="hold"] { --compact-stage-height: 170px; }
+  body.is-playing .challenge-card[data-kind="draw"] { --compact-stage-height: 205px; --compact-canvas-width: 332px; }
+  body.is-playing .challenge-card[data-kind="measure"] { --compact-stage-height: 220px; --compact-measure-width: 517px; }
+  body.is-playing .challenge-card[data-kind="colorMatch"] { --compact-stage-height: 205px; }
+  body.is-playing .challenge-card[data-kind="rhythm"],
+  body.is-playing .challenge-card[data-kind="predictBeat"],
+  body.is-playing .challenge-card[data-kind="angle"],
+  body.is-playing .challenge-card[data-kind="memory"],
+  body.is-playing .challenge-card[data-kind="percent"][data-variant="grid"],
+  body.is-playing .challenge-card[data-kind="percent"][data-variant="pie"] { --compact-stage-height: 220px; }
+  body.is-playing .challenge-controls { min-height: 48px; padding: 3px 8px 5px; }
+  body.is-playing .big-action { min-height: 46px; }
+  body.is-playing .confirm-button { min-height: 46px; }
   body.is-playing .countdown-panel { padding: 12px; gap: 10px 14px; box-shadow: 0 5px 0 var(--ink); }
   body.is-playing .countdown-copy h3 { font-size: 1.45rem; }
   body.is-playing .countdown-copy p { margin-top: 5px; font-size: .65rem; }
