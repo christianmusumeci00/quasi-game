@@ -1,5 +1,5 @@
-import { CHALLENGES, FAMILY_COLORS, buildDeck } from './challenges.js?v=20260730.20';
-import { createChallengeSeed, decodeChallenge, encodeChallenge, seededRandom } from './challenge-mode.js?v=20260730.20';
+import { CHALLENGES, FAMILY_COLORS, buildDeck } from './challenges.js?v=20260730.21';
+import { createChallengeSeed, decodeChallenge, encodeChallenge, seededRandom } from './challenge-mode.js?v=20260730.21';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -90,12 +90,20 @@ const incomingChallenge = decodedChallenge
   && new Set(decodedChallenge.deck.map((id) => challengeCatalog.get(id).kind)).size === 10
   ? decodedChallenge
   : null;
+const storedIncomingLiveResult = incomingChallenge
+  ? localStorage.getItem(`quasi-live-result:${incomingChallenge.seed}`)
+  : null;
+const shouldAutoJoinLiveChallenge = Boolean(
+  incomingChallenge
+  && incomingChallenge.score === null
+  && incomingChallenge.startAt
+  && storedIncomingLiveResult === null
+);
 
 if (incomingChallenge) {
   $('#challenge-invite').hidden = false;
-  const storedLiveResult = localStorage.getItem(`quasi-live-result:${incomingChallenge.seed}`);
-  if (storedLiveResult !== null) {
-    const savedScore = Number(storedLiveResult);
+  if (storedIncomingLiveResult !== null) {
+    const savedScore = Number(storedIncomingLiveResult);
     if (incomingChallenge.score !== null) {
       $('#challenge-invite > span').textContent = 'CONFRONTO';
       $('.challenge-invite strong').innerHTML = `<b>${savedScore}</b> TU · <b>${incomingChallenge.score}</b> AMICO`;
@@ -107,12 +115,6 @@ if (incomingChallenge) {
     $('.challenge-invite strong').innerHTML = '<b id="live-home-clock">--:--</b> ALLA PARTENZA';
     $('.challenge-invite small').textContent = 'Entra ora: la partita inizierà per tutti allo stesso istante.';
     $('#challenge-button span').textContent = 'ENTRA NELLA LOBBY';
-    const updateHomeClock = () => {
-      const clock = $('#live-home-clock');
-      if (clock) clock.textContent = formatClock(Math.max(0, incomingChallenge.startAt - Date.now()));
-    };
-    updateHomeClock();
-    setInterval(updateHomeClock, 500);
   } else {
     $('#opponent-score').textContent = incomingChallenge.score;
     $('#challenge-button span').textContent = 'ACCETTA LA SFIDA';
@@ -1477,4 +1479,11 @@ if (qaResultMode) {
     startTrainingLevel(challengeCatalog.get(qaPicker.value));
   });
   document.body.append(qaPicker);
+} else if (shouldAutoJoinLiveChallenge) {
+  startGame({
+    mode: 'challenge-live-guest',
+    deck: incomingChallenge.deck.map((id) => challengeCatalog.get(id)),
+    seed: incomingChallenge.seed,
+    startAt: incomingChallenge.startAt,
+  });
 }
