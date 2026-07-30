@@ -11,9 +11,9 @@ const mean = (items) => items.length ? items.reduce((sum, value) => sum + value,
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const challengeCatalog = new Map(CHALLENGES.map((challenge) => [challenge.id, challenge]));
 const pageParams = new URLSearchParams(window.location.search);
-const qaLevelId = ['localhost', '127.0.0.1'].includes(window.location.hostname)
-  ? pageParams.get('qa-level')
-  : null;
+const isLocalQa = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const qaLevelId = isLocalQa ? pageParams.get('qa-level') : null;
+const qaResultMode = isLocalQa && pageParams.has('qa-result');
 const qaCountdown = Boolean(qaLevelId && pageParams.has('qa-countdown'));
 ['count-7', 'count-11', 'count-14-fast', 'count-9-fakes', 'count-16-fakes']
   .forEach((legacyId) => challengeCatalog.set(legacyId, challengeCatalog.get('count-unknown')));
@@ -227,6 +227,7 @@ function makeCanvas(height = 330, width = 900) {
   canvas.width = width;
   canvas.height = height;
   canvas.style.setProperty('--canvas-ratio', `${canvas.width} / ${canvas.height}`);
+  canvas.style.setProperty('--canvas-aspect', String(canvas.width / canvas.height));
   canvas.setAttribute('aria-label', 'Area interattiva della sfida');
   stage.append(canvas);
   const pointFromEvent = (event) => {
@@ -681,18 +682,15 @@ function renderPredictBeat(config) {
 function renderDraw(config) {
   // Il foglio è volutamente alto: cerchi, otto e spirali devono poter usare
   // quasi tutta l'area disponibile anche sugli schermi stretti.
-  const { canvas, ctx, pointFromEvent } = makeCanvas(660, 660);
+  const { canvas, ctx, pointFromEvent } = makeCanvas(800, 800);
   const confirm = makeButton('DISEGNA PER VALUTARE');
   confirm.disabled = true;
   controls.append(confirm);
   const points = [];
   let drawing = false;
-  const paperColor = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim() || '#fff7e9';
 
   const background = () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = paperColor;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.strokeStyle = 'rgba(23,21,19,.18)'; ctx.lineWidth = 3; ctx.setLineDash([10, 12]);
     if (config.shape === 'line') {
       const [start, end] = drawLineGuide(canvas.width, canvas.height);
@@ -862,23 +860,27 @@ function renderMeasure(config) {
   const wrap=document.createElement('div');wrap.className='measure-stage';stage.append(wrap);
   const confirm=makeButton('CONFERMA LA MISURA');confirm.disabled=true;controls.append(confirm);
   let value=config.target*.65;
+  const lineSize=(amount)=>`${amount/360*80}%`;
+  const shapeSize=(amount)=>`${amount/250*100}%`;
   if(config.mode==='line'||config.mode==='memory'){
     wrap.innerHTML=`<span class="measure-label ref">RIFERIMENTO</span><div class="measure-reference ${config.mode==='memory'?'memory-hide':''}"></div><span class="measure-label you">LA TUA LINEA</span><div class="user-line"><i class="line-handle"></i></div>`;
-    const ref=$('.measure-reference',wrap), user=$('.user-line',wrap);ref.style.width=`${config.target}px`;ref.style.transform=`rotate(${config.angle||0}deg)`;user.style.width=`${value}px`;
+    const ref=$('.measure-reference',wrap), user=$('.user-line',wrap);ref.style.width=lineSize(config.target);ref.style.top=(config.angle||0)<0?'45%':'27%';ref.style.transform=`rotate(${config.angle||0}deg)`;user.style.width=lineSize(value);
     let dragging=false;
-    const update=(event)=>{const rect=user.getBoundingClientRect();value=clamp(event.clientX-rect.left,4,360);user.style.width=`${value}px`;confirm.disabled=false;};
+    const update=(event)=>{const rect=user.getBoundingClientRect();const available=wrap.getBoundingClientRect().width*.8;value=clamp((event.clientX-rect.left)/available*360,4,360);user.style.width=lineSize(value);confirm.disabled=false;};
     $('.line-handle',wrap).addEventListener('pointerdown',(event)=>{dragging=true;event.target.setPointerCapture(event.pointerId);});
     $('.line-handle',wrap).addEventListener('pointermove',(event)=>{if(dragging)update(event);});
     $('.line-handle',wrap).addEventListener('pointerup',()=>dragging=false);
+    $('.line-handle',wrap).addEventListener('pointercancel',()=>dragging=false);
   }else{
     const visual=document.createElement('div');visual.className=config.mode==='diameter'?'measure-circles':'measure-columns';
     const ref=document.createElement('div'),user=document.createElement('div');
     ref.className=config.mode==='diameter'?'measure-circle':'measure-column';user.className=`${config.mode==='diameter'?'measure-circle':'measure-column'} user`;
-    if(config.mode==='diameter'){ref.style.width=ref.style.height=`${config.target}px`;user.style.width=user.style.height=`${value}px`;}
-    else{ref.style.height=`${config.target}px`;user.style.height=`${value}px`;}
+    ref.style.height=shapeSize(config.target);user.style.height=shapeSize(value);
     visual.append(ref,user);wrap.append(visual);
     const slider=document.createElement('input');slider.type='range';slider.className='measure-slider';slider.min='40';slider.max='250';slider.value=value;slider.setAttribute('aria-label','Regola la misura');wrap.append(slider);
-    slider.addEventListener('input',()=>{value=Number(slider.value);if(config.mode==='diameter')user.style.width=user.style.height=`${value}px`;else user.style.height=`${value}px`;confirm.disabled=false;});
+    const updateSlider=()=>{value=Number(slider.value);user.style.height=shapeSize(value);confirm.disabled=false;};
+    slider.addEventListener('input',updateSlider);
+    slider.addEventListener('change',updateSlider);
   }
   confirm.addEventListener('click',()=>{const error=Math.abs(value-config.target);challengeResult(accuracy(error,config.target*.13),`Scarto dalla misura: ${error.toFixed(1)} px.`);});
 }
@@ -937,7 +939,7 @@ function pathFor(type) {
 function drawTracePath(ctx, points, width) {
   ctx.clearRect(0,0,900,330);ctx.lineCap='round';ctx.lineJoin='round';
   ctx.strokeStyle='#171513';ctx.lineWidth=width+8;ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();
-  ctx.strokeStyle='#fff7e9';ctx.lineWidth=width;ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,.9)';ctx.lineWidth=width;ctx.stroke();
   [points[0],points.at(-1)].forEach((p,index)=>{ctx.fillStyle=index?'#26c9a7':'#ff5b3d';ctx.beginPath();ctx.arc(p.x,p.y,width*.58,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#171513';ctx.lineWidth=3;ctx.stroke();});
 }
 
@@ -1014,15 +1016,17 @@ function renderMemory(config) {
 }
 
 function renderPrecision(config) {
-  const {canvas,ctx,pointFromEvent}=makeCanvas();
+  const canvasHeight=900;const yScale=canvasHeight/330;
+  const {canvas,ctx,pointFromEvent}=makeCanvas(canvasHeight,900);
+  const target={x:config.x,y:config.y*yScale};
   const distractors=Array.from({length:config.distractors},(_,index)=>({
-    x:70+((index*137+config.x*3)%760), y:42+((index*83+config.y*2)%245),
+    x:70+((index*137+config.x*3)%760), y:90+((index*127+config.y*3)%720),
     radius:10+(index%4)*3,
-  })).filter(point=>distance(point,{x:config.x,y:config.y})>65);
-  ctx.fillStyle='rgba(255,255,255,.42)';ctx.fillRect(0,0,900,330);ctx.lineWidth=3;ctx.strokeStyle='#171513';
+  })).filter(point=>distance(point,target)>65);
+  ctx.clearRect(0,0,canvas.width,canvas.height);ctx.lineWidth=3;ctx.strokeStyle='#171513';
   distractors.forEach((point,index)=>{ctx.fillStyle=index%2?'#7558ff':'#ffc93d';ctx.beginPath();ctx.arc(point.x,point.y,point.radius,0,Math.PI*2);ctx.fill();ctx.stroke();});
-  ctx.fillStyle='#ff5b3d';ctx.beginPath();ctx.arc(config.x,config.y,config.radius,0,Math.PI*2);ctx.fill();ctx.stroke();
-  canvas.addEventListener('pointerdown',(event)=>{const selected=pointFromEvent(event);const error=distance(selected,{x:config.x,y:config.y});challengeResult(accuracy(error,config.radius*1.75),`Distanza dal centro del bersaglio: ${error.toFixed(1)} px.`);});
+  ctx.fillStyle='#ff5b3d';ctx.beginPath();ctx.arc(target.x,target.y,config.radius,0,Math.PI*2);ctx.fill();ctx.stroke();
+  canvas.addEventListener('click',(event)=>{const selected=pointFromEvent(event);const error=distance(selected,target);challengeResult(accuracy(error,config.radius*1.75),`Distanza dal centro del bersaglio: ${error.toFixed(1)} px.`);});
 }
 
 function renderSymmetry(config) {
@@ -1054,7 +1058,9 @@ function renderColorMatch(config) {
   const color=(value)=>`hsl(${config.mode==='hue'?value:config.hue} ${config.mode==='saturation'?value:config.saturation}% ${config.mode==='lightness'?value:config.lightness}%)`;
   reference.style.background=color(target);const update=()=>attempt.style.background=color(Number(slider.value));update();
   const confirm=makeButton('CONFERMA IL COLORE');confirm.disabled=true;controls.append(confirm);
-  slider.addEventListener('input',()=>{update();confirm.disabled=false;});
+  const updateSlider=()=>{update();confirm.disabled=false;};
+  slider.addEventListener('input',updateSlider);
+  slider.addEventListener('change',updateSlider);
   confirm.addEventListener('click',()=>{let error=Math.abs(Number(slider.value)-target);if(config.mode==='hue')error=Math.min(error,360-error);challengeResult(accuracy(error,config.mode==='hue'?28:11),`Scarto ${config.mode==='hue'?'cromatico':'percettivo'}: ${error.toFixed(1)}${config.mode==='hue'?'°':' punti'}.`);});
 }
 
@@ -1313,7 +1319,10 @@ function openTrainingDialog() {
   trainingDialog.classList.remove('is-searching');
   renderTrainingFilters();
   renderTrainingCatalog();
-  if (!trainingDialog.open) trainingDialog.showModal();
+  if (!trainingDialog.open) {
+    document.body.classList.add('modal-open');
+    trainingDialog.showModal();
+  }
   $('#training-grid').scrollTop = 0;
 }
 
@@ -1335,7 +1344,10 @@ $('#training-button').addEventListener('click', openTrainingDialog);
 trainingSearch.addEventListener('input', renderTrainingCatalog);
 trainingSearch.addEventListener('focus', () => trainingDialog.classList.add('is-searching'));
 trainingSearch.addEventListener('blur', () => trainingDialog.classList.remove('is-searching'));
-trainingDialog.addEventListener('close', () => trainingDialog.classList.remove('is-searching'));
+trainingDialog.addEventListener('close', () => {
+  trainingDialog.classList.remove('is-searching');
+  document.body.classList.remove('modal-open');
+});
 $('#training-filters').addEventListener('click', (event) => {
   const button = event.target.closest('.training-filter');
   if (!button) return;
@@ -1396,8 +1408,17 @@ window.QUASI = {
   getGrade,
 };
 
-// Localhost-only entry point used by the responsive level-by-level audit.
-if (qaLevelId && challengeCatalog.has(qaLevelId)) {
+// Localhost-only entry points used by responsive release audits.
+if (qaResultMode) {
+  state.mode = 'solo';
+  state.deck = CHALLENGES.slice(0, 10);
+  state.results = state.deck.map((challenge, index) => ({
+    challenge,
+    score: [99, 96, 92, 88, 84, 78, 73, 68, 61, 55][index],
+    detail: 'Risultato dimostrativo per il collaudo locale.',
+  }));
+  finishGame();
+} else if (qaLevelId && challengeCatalog.has(qaLevelId)) {
   startTrainingLevel(challengeCatalog.get(qaLevelId));
 
   const qaPicker = document.createElement('select');
