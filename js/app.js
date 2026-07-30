@@ -1,5 +1,5 @@
-import { CHALLENGES, FAMILY_COLORS, buildDeck } from './challenges.js?v=20260730.19';
-import { createChallengeSeed, decodeChallenge, encodeChallenge, seededRandom } from './challenge-mode.js?v=20260730.19';
+import { CHALLENGES, FAMILY_COLORS, buildDeck } from './challenges.js?v=20260730.20';
+import { createChallengeSeed, decodeChallenge, encodeChallenge, seededRandom } from './challenge-mode.js?v=20260730.20';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -993,16 +993,18 @@ function renderReaction(config) {
     const symbols=['●','▲','◆','■','✚'].filter(symbol=>symbol!==targetSymbol);
     const distractorCount=3+Math.floor(random()*4);
     let count=0;
-    const nextDelay=()=>Math.max(220,pace*(.68+random()*.72));
+    let previousSymbol='';
     const cycle=()=>{
       if(count>=distractorCount){activate();return;}
-      $('strong',zone).textContent=symbols[Math.floor(random()*symbols.length)];
+      const availableSymbols=symbols.filter(symbol=>symbol!==previousSymbol);
+      previousSymbol=availableSymbols[Math.floor(random()*availableSymbols.length)];
+      $('strong',zone).textContent=previousSymbol;
       count+=1;
-      timeout=setTimeout(cycle,nextDelay());
+      timeout=setTimeout(cycle,pace);
     };
-    // Anche l'arrivo della prima esca è variabile: non nasce una cadenza
-    // prevedibile che anticipi l'apparizione del simbolo corretto.
-    timeout=setTimeout(cycle,Math.max(320,pace*(.75+random()*.65)));
+    // Prima esca, esche successive e bersaglio condividono lo stesso identico
+    // intervallo: il simbolo corretto non è preceduto da pause o rallentamenti.
+    timeout=setTimeout(cycle,pace);
   }
   registerCleanup(()=>clearTimeout(timeout));
   const react=()=>{if(state.locked)return;if(!ready){clearTimeout(timeout);challengeResult(0,'Falsa partenza: hai toccato troppo presto.');return;}const ms=performance.now()-readyTime;const score=accuracy(Math.max(0,ms-155),370);challengeResult(score,`Tempo di reazione: ${Math.round(ms)} ms.`);};
