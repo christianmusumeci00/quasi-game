@@ -13,7 +13,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png" />
     <link rel="manifest" href="site.webmanifest" />
-    <link rel="stylesheet" href="styles.css?v=20260730.29" />
+    <link rel="stylesheet" href="styles.css?v=20260730.32" />
   </head>
   <body>
     <div class="noise" aria-hidden="true"></div>
@@ -24,7 +24,7 @@
       </button>
       <div class="header-actions">
         <button class="cloud-pill" id="online-status" type="button" aria-label="Apri la classifica mondiale">
-          <i aria-hidden="true"></i><span>LOCALE</span>
+          <i aria-hidden="true"></i><span>CLASSIFICA</span>
         </button>
         <div class="best-pill" aria-label="Miglior punteggio">
           <span>BEST</span><strong id="header-best">—</strong>
@@ -156,7 +156,7 @@
         <li><b>Da 0 a 100</b><span>Ogni gesto viene confrontato con il risultato ideale. Nessun bonus misterioso.</span></li>
         <li><b>Un grado finale</b><span>La media delle prove determina il tuo voto, da E fino all'introvabile S+.</span></li>
         <li><b>Sfida realtime</b><span>Condividi il link: tutti entrano direttamente nel countdown, giocano insieme e vedono i risultati live.</span></li>
-        <li><b>Classifica mondiale</b><span>Scegli il tuo nome e prova a entrare nei record di sempre, della settimana o di oggi.</span></li>
+        <li><b>Classifiche mondiali</b><span>Scala la classifica generale oppure conquista il record di uno specifico livello.</span></li>
         <li><b>Allenamento libero</b><span>Scegli un livello dal catalogo, ripetilo e prova a migliorare il tuo record personale.</span></li>
       </ol>
       <button class="primary-button dialog-start" type="button"><span>HO CAPITO, GIOCHIAMO</span><b>→</b></button>
@@ -197,6 +197,16 @@
       <button class="primary-button profile-save" id="profile-save" type="button"><span>SALVA PROFILO</span><b>→</b></button>
     </dialog>
 
+    <dialog class="leaderboard-dialog level-leaderboard-dialog" id="level-leaderboard-dialog">
+      <button class="dialog-close" type="button" aria-label="Chiudi">×</button>
+      <p class="eyebrow"><span></span> RECORD DEL LIVELLO</p>
+      <h2 id="level-leaderboard-title">CLASSIFICA<br />MONDIALE.</h2>
+      <p class="level-leaderboard-name" id="level-leaderboard-name"></p>
+      <div class="leaderboard-state" id="level-leaderboard-state" role="status">CARICAMENTO…</div>
+      <ol class="leaderboard-list" id="level-leaderboard-list"></ol>
+      <p class="leaderboard-note">Conta il miglior risultato ottenuto da ogni giocatore, in partita o in Allenamento.</p>
+    </dialog>
+
     <dialog class="rematch-dialog" id="rematch-dialog">
       <button class="dialog-close rematch-close" type="button" aria-label="Chiudi">×</button>
       <p class="eyebrow"><span></span> SFIDA REALTIME</p>
@@ -233,14 +243,17 @@
         <strong id="feedback-score">96</strong>
         <h2 id="feedback-title">QUASI PERFETTO!</h2>
         <p id="feedback-detail">Solo 0,041 s di scarto.</p>
+        <p class="level-world-status" id="level-world-status" hidden></p>
         <button class="primary-button" id="next-button" type="button"><span>PROSSIMA SFIDA</span><b>→</b></button>
+        <button class="secondary-button level-leaderboard-button" id="level-leaderboard-button" type="button" hidden>CLASSIFICA DEL LIVELLO</button>
         <button class="secondary-button training-back-button" id="training-back-button" type="button" hidden>SCEGLI UN ALTRO LIVELLO</button>
+        <button class="text-button training-home-button" id="training-home-button" type="button" data-go-home hidden>TORNA ALLA HOME</button>
       </div>
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <noscript>QUASI! richiede JavaScript per funzionare.</noscript>
-    <script type="module" src="js/app.js?v=20260730.29"></script>
+    <script type="module" src="js/app.js?v=20260730.31"></script>
   </body>
 </html>

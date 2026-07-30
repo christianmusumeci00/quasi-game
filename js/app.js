@@ -1,17 +1,19 @@
-import { CHALLENGES, FAMILY_COLORS, buildDeck } from './challenges.js?v=20260730.29';
-import { createChallengeSeed, decodeChallenge, encodeChallenge, seededRandom } from './challenge-mode.js?v=20260730.29';
+import { CHALLENGES, FAMILY_COLORS, buildDeck } from './challenges.js?v=20260730.31';
+import { createChallengeSeed, decodeChallenge, encodeChallenge, seededRandom } from './challenge-mode.js?v=20260730.31';
 import {
   connectRealtimeRoom,
   disconnectRealtimeRoom,
   ensureOnlineProfile,
+  fetchLevelLeaderboard,
   fetchWorldLeaderboard,
   getPlayerName,
   getRoomConnection,
   isSupabaseConfigured,
   savePlayerName,
+  submitLevelScore,
   submitWorldScore,
   validatePlayerName,
-} from './online.js?v=20260730.29';
+} from './online.js?v=20260730.31';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -43,6 +45,7 @@ const compareDialog = $('#compare-dialog');
 const trainingDialog = $('#training-dialog');
 const trainingSearch = $('#training-search');
 const leaderboardDialog = $('#leaderboard-dialog');
+const levelLeaderboardDialog = $('#level-leaderboard-dialog');
 const profileDialog = $('#profile-dialog');
 const rematchDialog = $('#rematch-dialog');
 let trainingFamily = 'Tutte';
@@ -87,6 +90,7 @@ const state = {
   roomId: null,
   roomRound: 1,
   gameStartedAt: 0,
+  challengeStartedAt: 0,
   randomSource: Math.random,
 };
 
@@ -112,7 +116,7 @@ function challengeCodeFromUrl(url = new URL(window.location.href)) {
 $('#header-best').textContent = storedBest ? `${storedBest}` : '—';
 $('#sound-toggle').setAttribute('aria-pressed', String(state.sound));
 $('#profile-name').textContent = getPlayerName();
-$('#online-status span').textContent = isSupabaseConfigured() ? 'PRONTO' : 'LOCALE';
+$('#online-status span').textContent = 'CLASSIFICA';
 $('#online-status').classList.toggle('is-online', isSupabaseConfigured());
 
 const decodedChallenge = decodeChallenge(
@@ -171,9 +175,9 @@ function updateHomeAfterLiveGame(score) {
   $('#challenge-button').classList.add('has-invite');
 }
 
-function setOnlineStatus(label, status = '') {
+function setOnlineStatus(_label, status = '') {
   const badge = $('#online-status');
-  $('span', badge).textContent = label;
+  $('span', badge).textContent = 'CLASSIFICA';
   badge.classList.toggle('is-online', status === 'online');
   badge.classList.toggle('is-error', status === 'error');
 }
@@ -181,10 +185,11 @@ function setOnlineStatus(label, status = '') {
 function describeOnlineError(error, fallback) {
   const message = String(error?.message || '');
   if (/anonymous sign-ins are disabled/i.test(message)) {
-    return 'ABILITA “ALLOW ANONYMOUS SIGN-INS” IN SUPABASE AUTHENTICATION.';
+    return 'SERVIZIO TEMPORANEAMENTE NON DISPONIBILE. RIPROVA TRA POCO.';
   }
-  if (/get_leaderboard|submit_score/i.test(message) && /does not exist|schema cache/i.test(message)) {
-    return 'ESEGUI DI NUOVO SUPABASE/SCHEMA.SQL NEL SQL EDITOR.';
+  if (/get_leaderboard|submit_score|get_level_leaderboard|submit_level_score/i.test(message)
+    && /does not exist|schema cache/i.test(message)) {
+    return 'CLASSIFICA IN AGGIORNAMENTO. RIPROVA TRA POCO.';
   }
   return fallback;
 }
@@ -196,7 +201,7 @@ function openManagedDialog(dialog) {
 
 function closeManagedDialog(dialog) {
   if (dialog.open) dialog.close();
-  if (![leaderboardDialog, profileDialog, rematchDialog, trainingDialog, howDialog, compareDialog].some((item) => item.open)) {
+  if (![leaderboardDialog, levelLeaderboardDialog, profileDialog, rematchDialog, trainingDialog, howDialog, compareDialog].some((item) => item.open)) {
     document.body.classList.remove('modal-open');
   }
 }
@@ -393,7 +398,7 @@ async function connectGameRealtime() {
 
 async function proposeRematch() {
   if (!isSupabaseConfigured() || !onlineState.room) {
-    showToast('Configura Supabase per proporre una rivincita senza nuovo link.');
+    showToast('La rivincita realtime non è disponibile in questo momento.');
     return;
   }
   const deck = buildDeck(10, {
@@ -439,52 +444,85 @@ async function acceptRematch() {
   }
 }
 
+function makeLeaderboardRows(rows, countField, countLabel) {
+  return rows.map((entry) => {
+    const row = document.createElement('li');
+    row.className = `leaderboard-row${entry.is_current_player ? ' is-player' : ''}`;
+    const rank = document.createElement('span');
+    rank.className = 'leaderboard-rank';
+    rank.textContent = `#${entry.rank_position}`;
+    const player = document.createElement('span');
+    player.className = 'leaderboard-player';
+    const name = document.createElement('strong');
+    const meta = document.createElement('small');
+    name.textContent = entry.nickname;
+    meta.textContent = `${entry[countField]} ${countLabel} · MEDIA ${Number(entry.average_score).toFixed(1)}`;
+    player.append(name, meta);
+    const score = document.createElement('strong');
+    score.className = 'leaderboard-score';
+    score.textContent = entry.best_score;
+    row.append(rank, player, score);
+    return row;
+  });
+}
+
 async function openLeaderboard(period = onlineState.leaderboardPeriod) {
   onlineState.leaderboardPeriod = period;
   $$('#leaderboard-tabs button').forEach((button) => button.classList.toggle('is-active', button.dataset.period === period));
   $('#leaderboard-list').replaceChildren();
   $('#leaderboard-state').hidden = false;
-  $('#leaderboard-state').textContent = isSupabaseConfigured() ? 'CARICAMENTO…' : 'CONFIGURA SUPABASE PER ATTIVARE LA CLASSIFICA MONDIALE.';
+  $('#leaderboard-state').textContent = isSupabaseConfigured() ? 'CARICAMENTO…' : 'CLASSIFICA TEMPORANEAMENTE NON DISPONIBILE.';
   openManagedDialog(leaderboardDialog);
   if (!isSupabaseConfigured()) return;
   try {
-    const { rows, userId } = await fetchWorldLeaderboard(period);
+    const { rows } = await fetchWorldLeaderboard(period);
     setOnlineStatus('ONLINE', 'online');
     $('#leaderboard-state').hidden = rows.length > 0;
     if (!rows.length) $('#leaderboard-state').textContent = 'NESSUN RECORD IN QUESTO PERIODO. PUOI ESSERE IL PRIMO.';
-    $('#leaderboard-list').replaceChildren(...rows.map((entry) => {
-      const row = document.createElement('li');
-      row.className = `leaderboard-row${entry.is_current_player || entry.user_id === userId ? ' is-player' : ''}`;
-      const rank = document.createElement('span');
-      rank.className = 'leaderboard-rank';
-      rank.textContent = `#${entry.rank_position}`;
-      const player = document.createElement('span');
-      player.className = 'leaderboard-player';
-      const name = document.createElement('strong');
-      const meta = document.createElement('small');
-      name.textContent = entry.nickname;
-      meta.textContent = `${entry.games_played} PARTITE · MEDIA ${Number(entry.average_score).toFixed(1)}`;
-      player.append(name, meta);
-      const score = document.createElement('strong');
-      score.className = 'leaderboard-score';
-      score.textContent = entry.best_score;
-      row.append(rank, player, score);
-      return row;
-    }));
+    $('#leaderboard-list').replaceChildren(...makeLeaderboardRows(rows, 'games_played', 'PARTITE'));
   } catch (error) {
     console.error('QUASI! leaderboard request failed:', error);
     setOnlineStatus('CONFIG', 'error');
     $('#leaderboard-state').hidden = false;
     $('#leaderboard-state').textContent = describeOnlineError(
       error,
-      'CLASSIFICA NON DISPONIBILE. CONTROLLA LA CONFIGURAZIONE SUPABASE.',
+      'CLASSIFICA TEMPORANEAMENTE NON DISPONIBILE.',
+    );
+  }
+}
+
+async function openLevelLeaderboard(challenge = state.deck[state.round] || state.deck[0]) {
+  if (!challenge) return;
+  $('#level-leaderboard-name').textContent = challenge.name;
+  $('#level-leaderboard-list').replaceChildren();
+  $('#level-leaderboard-state').hidden = false;
+  $('#level-leaderboard-state').textContent = isSupabaseConfigured()
+    ? 'CARICAMENTO…'
+    : 'CLASSIFICA TEMPORANEAMENTE NON DISPONIBILE.';
+  openManagedDialog(levelLeaderboardDialog);
+  if (!isSupabaseConfigured()) return;
+  try {
+    const rows = await fetchLevelLeaderboard(challenge.id);
+    setOnlineStatus('ONLINE', 'online');
+    $('#level-leaderboard-state').hidden = rows.length > 0;
+    if (!rows.length) $('#level-leaderboard-state').textContent = 'NESSUN RECORD: PUOI ESSERE IL PRIMO.';
+    $('#level-leaderboard-list').replaceChildren(...makeLeaderboardRows(rows, 'attempts', 'TENTATIVI'));
+  } catch (error) {
+    console.error('QUASI! level leaderboard request failed:', error);
+    setOnlineStatus('ERROR', 'error');
+    $('#level-leaderboard-state').hidden = false;
+    $('#level-leaderboard-state').textContent = describeOnlineError(
+      error,
+      'CLASSIFICA TEMPORANEAMENTE NON DISPONIBILE.',
     );
   }
 }
 
 function openProfile() {
   $('#profile-input').value = getPlayerName();
-  $('#profile-message').textContent = isSupabaseConfigured() ? 'Il profilo verrà sincronizzato online.' : 'Profilo locale: collega Supabase per apparire in classifica.';
+  $('#profile-message').textContent = isSupabaseConfigured()
+    ? 'Questo nome apparirà nelle classifiche.'
+    : 'Il nome verrà salvato su questo dispositivo.';
   openManagedDialog(profileDialog);
   $('#profile-input').focus({ preventScroll: true });
 }
@@ -527,11 +565,36 @@ async function publishWorldScore(score) {
       mode: state.mode.includes('challenge') ? 'challenge' : 'solo',
       durationMs: Date.now() - state.gameStartedAt,
       levelScores: state.results.map((entry) => entry.score),
+      levelIds: state.results.map((entry) => entry.challenge.id),
     });
     status.textContent = `CLASSIFICA AGGIORNATA · RECORD ${result.best_score}/100 · POSIZIONE #${result.world_position}`;
   } catch (error) {
     console.error('QUASI! score submission failed:', error);
     status.textContent = 'CLASSIFICA NON AGGIORNATA · RIPROVA CON LA PROSSIMA PARTITA';
+  }
+}
+
+async function publishTrainingLevelScore(challenge, score) {
+  const status = $('#level-world-status');
+  if (!isSupabaseConfigured()) {
+    status.hidden = true;
+    return;
+  }
+  status.hidden = false;
+  status.textContent = 'AGGIORNAMENTO RECORD MONDIALE…';
+  try {
+    const result = await submitLevelScore({
+      levelId: challenge.id,
+      score,
+      durationMs: Math.max(50, Date.now() - state.challengeStartedAt),
+    });
+    if (state.mode !== 'training' || state.deck[0]?.id !== challenge.id) return;
+    setOnlineStatus('ONLINE', 'online');
+    status.textContent = `RECORD ${result.best_score}/100 · POSIZIONE MONDIALE #${result.world_position}`;
+  } catch (error) {
+    console.error('QUASI! level score submission failed:', error);
+    if (state.mode !== 'training' || state.deck[0]?.id !== challenge.id) return;
+    status.textContent = describeOnlineError(error, 'RECORD MONDIALE NON AGGIORNATO. RIPROVA.');
   }
 }
 
@@ -655,16 +718,23 @@ function challengeResult(score, detail) {
   $('#feedback-title').textContent = scoreMessage(finalScore);
   $('#feedback-detail').textContent = detail;
   if (state.mode === 'training') {
-    const bestKey = `quasi-training-best:${state.deck[0].id}`;
+    const challenge = state.deck[0];
+    const bestKey = `quasi-training-best:${challenge.id}`;
     const storedTrainingBest = localStorage.getItem(bestKey);
     if (storedTrainingBest === null || finalScore > Number(storedTrainingBest)) {
       localStorage.setItem(bestKey, String(finalScore));
     }
     $('#next-button span').textContent = 'RIPROVA IL LIVELLO';
+    $('#level-leaderboard-button').hidden = false;
     $('#training-back-button').hidden = false;
+    $('#training-home-button').hidden = false;
+    void publishTrainingLevelScore(challenge, finalScore);
   } else {
     $('#next-button span').textContent = state.round === 9 ? 'VEDI IL RISULTATO' : 'PROSSIMA SFIDA';
+    $('#level-world-status').hidden = true;
+    $('#level-leaderboard-button').hidden = true;
     $('#training-back-button').hidden = true;
+    $('#training-home-button').hidden = true;
   }
   feedbackLayer.hidden = false;
   $('#next-button').focus();
@@ -760,9 +830,13 @@ function renderChallenge() {
     challengeResult(0, 'Questa prova non è disponibile.');
     return;
   }
+  const launchRenderer = () => {
+    state.challengeStartedAt = Date.now();
+    renderer(challenge.config);
+  };
   const beginChallenge = () => {
-    if (startsAutomatically(challenge) && (!qaLevelId || qaCountdown)) renderStartCountdown(() => renderer(challenge.config));
-    else renderer(challenge.config);
+    if (startsAutomatically(challenge) && (!qaLevelId || qaCountdown)) renderStartCountdown(launchRenderer);
+    else launchRenderer();
   };
   if (state.round === 0 && state.startAt && state.startAt > Date.now()) renderLiveWaiting(beginChallenge);
   else beginChallenge();
@@ -1727,7 +1801,7 @@ async function launchLiveChallenge() {
       setOnlineStatus('ONLINE', 'online');
     } catch {
       setOnlineStatus('OFFLINE', 'error');
-      showToast('Profilo online non disponibile: controlla Supabase.');
+      showToast('Servizio online non disponibile. Riprova tra poco.');
       return;
     }
   }
@@ -1903,6 +1977,7 @@ $('#next-button').addEventListener('click',()=>{
   else { state.round += 1; renderChallenge(); }
 });
 $('#training-back-button').addEventListener('click', returnToTrainingCatalog);
+$('#level-leaderboard-button').addEventListener('click', () => void openLevelLeaderboard(state.deck[0]));
 $('#share-button').addEventListener('click',shareResult);
 $('#compare-button').addEventListener('click',()=>{$('#compare-output').hidden=true;$('#compare-input').value='';openManagedDialog(compareDialog);$('#compare-input').focus();});
 $('#compare-submit').addEventListener('click',compareFriendResult);
@@ -1944,9 +2019,9 @@ $$('[data-go-home]').forEach(button=>button.addEventListener('click',()=>{
   showScreen(homeScreen);
 }));
 
-[leaderboardDialog, profileDialog, rematchDialog, howDialog, compareDialog].forEach((dialog) => {
+[leaderboardDialog, levelLeaderboardDialog, profileDialog, rematchDialog, howDialog, compareDialog].forEach((dialog) => {
   dialog.addEventListener('close', () => {
-    if (![leaderboardDialog, profileDialog, rematchDialog, trainingDialog, howDialog, compareDialog].some((item) => item.open)) {
+    if (![leaderboardDialog, levelLeaderboardDialog, profileDialog, rematchDialog, trainingDialog, howDialog, compareDialog].some((item) => item.open)) {
       document.body.classList.remove('modal-open');
     }
   });

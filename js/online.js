@@ -1,4 +1,4 @@
-import { SUPABASE_CONFIG } from './supabase-config.js?v=20260730.29';
+import { SUPABASE_CONFIG } from './supabase-config.js?v=20260730.31';
 
 const PROFILE_KEY = 'quasi-player-name';
 const NAME_MIN = 2;
@@ -6,6 +6,18 @@ const NAME_MAX = 20;
 
 let clientPromise = null;
 let roomConnection = null;
+
+function scoreEnvironment() {
+  const hostname = window.location.hostname.toLowerCase();
+  const privateHost = hostname === 'localhost'
+    || hostname === '::1'
+    || hostname.endsWith('.local')
+    || /^127\./.test(hostname)
+    || /^10\./.test(hostname)
+    || /^192\.168\./.test(hostname)
+    || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname);
+  return window.location.protocol === 'file:' || privateHost ? 'local' : 'production';
+}
 
 function compactName(value) {
   return String(value || '')
@@ -197,7 +209,7 @@ export async function disconnectRealtimeRoom() {
   try { await client.removeChannel(channel); } catch { /* Cleanup remains best effort. */ }
 }
 
-export async function submitWorldScore({ score, mode, durationMs, levelScores }) {
+export async function submitWorldScore({ score, mode, durationMs, levelScores, levelIds }) {
   const { client } = await getOnlineClient();
   await ensureOnlineProfile(getPlayerName());
   const { data, error } = await client.rpc('submit_score', {
@@ -205,6 +217,8 @@ export async function submitWorldScore({ score, mode, durationMs, levelScores })
     p_mode: mode === 'challenge' ? 'challenge' : 'solo',
     p_duration_ms: Math.max(1, Math.round(durationMs)),
     p_level_scores: levelScores.map((value) => Math.round(value)),
+    p_level_ids: levelIds,
+    p_environment: scoreEnvironment(),
   });
   if (error) throw error;
   return Array.isArray(data) ? data[0] : data;
@@ -213,7 +227,33 @@ export async function submitWorldScore({ score, mode, durationMs, levelScores })
 export async function fetchWorldLeaderboard(period = 'all') {
   const { client, user } = await getOnlineClient();
   const safePeriod = ['all', 'week', 'today'].includes(period) ? period : 'all';
-  const { data, error } = await client.rpc('get_leaderboard', { p_period: safePeriod });
+  const { data, error } = await client.rpc('get_leaderboard', {
+    p_period: safePeriod,
+    p_environment: scoreEnvironment(),
+  });
   if (error) throw error;
   return { rows: data || [], userId: user.id };
+}
+
+export async function submitLevelScore({ levelId, score, durationMs }) {
+  const { client } = await getOnlineClient();
+  await ensureOnlineProfile(getPlayerName());
+  const { data, error } = await client.rpc('submit_level_score', {
+    p_level_id: levelId,
+    p_score: Math.round(score),
+    p_duration_ms: Math.max(50, Math.round(durationMs)),
+    p_environment: scoreEnvironment(),
+  });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
+}
+
+export async function fetchLevelLeaderboard(levelId) {
+  const { client } = await getOnlineClient();
+  const { data, error } = await client.rpc('get_level_leaderboard', {
+    p_level_id: levelId,
+    p_environment: scoreEnvironment(),
+  });
+  if (error) throw error;
+  return data || [];
 }

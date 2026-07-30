@@ -8,7 +8,7 @@ Un gioco web di precisione, stima, memoria e riflessi. Ogni partita seleziona 10
 - 10 meccaniche sempre diverse in ogni partita, con rotazione anti-ripetizione fra partite consecutive
 - modalità Giocatore singolo, Sfida realtime tramite link e Allenamento libero
 - stanze realtime private con presenza online, risultati del gruppo e rivincita senza un nuovo link
-- profilo anonimo e classifica mondiale di sempre, settimanale e giornaliera con Supabase
+- profilo anonimo, classifica mondiale generale e record mondiali per ciascuno dei 200 livelli
 - catalogo di allenamento con ricerca, filtri per famiglia e record locale per ciascuno dei 200 livelli
 - conto alla rovescia di 5 secondi prima delle prove ad avvio automatico
 - punteggio di accuratezza 0–100 e grado arcade da E a S+
@@ -96,6 +96,10 @@ Con Supabase configurato, lo stesso link può essere aperto da più partecipanti
 ## Classifica mondiale
 
 Le partite complete da dieci livelli possono aggiornare la classifica globale. L’accesso è anonimo e persistente sul browser: il giocatore sceglie soltanto un nickname. Le scritture dirette sono bloccate da Row Level Security e i risultati passano da una funzione SQL che verifica quantità dei livelli, intervallo dei punteggi, media, durata e frequenza degli invii. È una valida protezione per un gioco statico casual, ma non sostituisce un server autorevole contro un attaccante determinato.
+
+Ogni risultato alimenta anche la classifica mondiale dello specifico livello. In Allenamento, dopo ogni tentativo vengono mostrati record e posizione mondiale, con accesso immediato alla top del livello. Anche i risultati ottenuti nelle partite complete contribuiscono automaticamente ai relativi record individuali.
+
+Le classifiche di sviluppo e produzione sono separate automaticamente. `localhost`, `127.0.0.1`, gli indirizzi della rete locale e i domini `.local` scrivono nell’ambiente `local`; GitHub Pages e gli altri domini pubblici leggono e scrivono soltanto nell’ambiente `production`. I test eseguiti in locale non possono quindi comparire agli utenti del sito pubblicato.
 
 ## Allenamento
 
