@@ -679,18 +679,20 @@ function renderPredictBeat(config) {
 }
 
 function renderDraw(config) {
-  // Il foglio da disegno è meno panoramico degli altri canvas: su telefono
-  // resta abbastanza alto da rendere comodi cerchi, otto e spirali.
-  const { canvas, ctx, pointFromEvent } = makeCanvas(420, 680);
+  // Il foglio è volutamente alto: cerchi, otto e spirali devono poter usare
+  // quasi tutta l'area disponibile anche sugli schermi stretti.
+  const { canvas, ctx, pointFromEvent } = makeCanvas(660, 660);
   const confirm = makeButton('DISEGNA PER VALUTARE');
   confirm.disabled = true;
   controls.append(confirm);
   const points = [];
   let drawing = false;
+  const paperColor = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim() || '#fff7e9';
 
   const background = () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = 'rgba(255,255,255,.42)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = paperColor;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.strokeStyle = 'rgba(23,21,19,.18)'; ctx.lineWidth = 3; ctx.setLineDash([10, 12]);
     if (config.shape === 'line') {
       const [start, end] = drawLineGuide(canvas.width, canvas.height);
