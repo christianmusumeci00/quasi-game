@@ -6,7 +6,9 @@ Un gioco web di precisione, stima, memoria e riflessi. Ogni partita seleziona 10
 
 - 200 mini-sfide in 16 famiglie, tutte giocabili con mouse e touch
 - 10 meccaniche sempre diverse in ogni partita, con rotazione anti-ripetizione fra partite consecutive
-- modalità Giocatore singolo, Sfida un amico tramite link e Allenamento libero
+- modalità Giocatore singolo, Sfida realtime tramite link e Allenamento libero
+- stanze realtime private con presenza online, risultati del gruppo e rivincita senza un nuovo link
+- profilo anonimo e classifica mondiale di sempre, settimanale e giornaliera con Supabase
 - catalogo di allenamento con ricerca, filtri per famiglia e record locale per ciascuno dei 200 livelli
 - conto alla rovescia di 5 secondi prima delle prove ad avvio automatico
 - punteggio di accuratezza 0–100 e grado arcade da E a S+
@@ -16,7 +18,8 @@ Un gioco web di precisione, stima, memoria e riflessi. Ogni partita seleziona 10
 - miglior punteggio e preferenza audio salvati in `localStorage`
 - interfaccia responsive, navigabile anche da tastiera
 - safe area, controlli e gesture ottimizzati per iPhone, Android e tablet
-- nessun cookie, backend, framework o servizio esterno
+- nessun framework e nessuna build: frontend statico compatibile con GitHub Pages
+- Supabase opzionale per realtime e classifica; il gioco singolo e l’allenamento restano disponibili anche offline
 
 ## Avvio in locale
 
@@ -46,6 +49,18 @@ npx serve .
 
 Non serve configurare GitHub Actions. Il file `.nojekyll` fa pubblicare i file statici senza elaborazione Jekyll.
 
+## Attivazione Supabase
+
+Il frontend resta completamente statico. Supabase aggiunge accesso anonimo, stanze realtime private e classifica mondiale senza esporre segreti nel repository.
+
+1. crea un progetto Supabase;
+2. abilita gli accessi anonimi;
+3. esegui [`supabase/schema.sql`](supabase/schema.sql) nel SQL Editor;
+4. inserisci Project URL e **Publishable key** in [`js/supabase-config.js`](js/supabase-config.js);
+5. pubblica su GitHub Pages e prova la stessa sfida da due dispositivi.
+
+La procedura dettagliata e le impostazioni di sicurezza sono in [`supabase/SETUP.md`](supabase/SETUP.md). Non inserire mai nel frontend la chiave `service_role` o una Secret key.
+
 ## Struttura
 
 ```text
@@ -55,7 +70,12 @@ Non serve configurare GitHub Actions. Il file `.nojekyll` fa pubblicare i file s
 ├── js/
 │   ├── app.js          # motore di gioco, input, scoring e carta finale
 │   ├── challenge-mode.js # codifica link e casualità condivisa delle sfide
-│   └── challenges.js   # catalogo delle 200 mini-sfide
+│   ├── challenges.js   # catalogo delle 200 mini-sfide
+│   ├── online.js       # profilo, realtime, rivincite e classifica
+│   └── supabase-config.js # sole chiavi pubbliche del progetto Supabase
+├── supabase/
+│   ├── schema.sql      # tabelle, funzioni, RLS e policy Realtime
+│   └── SETUP.md        # configurazione guidata
 ├── .nojekyll           # pubblicazione statica diretta su GitHub Pages
 ├── LICENSE
 └── README.md
@@ -69,7 +89,13 @@ Per ridurre la monotonia, rispetto alla partita precedente vengono scelte 7 mecc
 
 ## Sfida un amico
 
-La modalità sfida non richiede account o server. Chi crea la sfida condivide subito un link che contiene gli identificativi delle dieci prove, un seed casuale e l'orario comune di partenza. I dati della sfida sono salvati nel frammento `#challenge` del link: GitHub Pages riceve sempre il percorso statico della home e non deve interpretare una rotta dinamica. Aprendo l'invito si entra direttamente nella schermata di gioco e nel countdown sincronizzato, senza passaggi intermedi. Lo stesso link può essere aperto da più partecipanti: tutti ricevono gli stessi livelli, configurazioni casuali e orario di partenza. Al termine ciascun giocatore può condividere il proprio risultato; gli altri possono aprirlo oppure incollarlo nel pannello **Confronta con un amico** per vedere vittoria, sconfitta, pareggio e differenza punti.
+Chi crea la sfida condivide un link che contiene gli identificativi delle dieci prove, un seed casuale e l’orario comune di partenza. I dati sono nel frammento `#challenge`: GitHub Pages riceve sempre la root esistente e non mostra pagine 404. Aprendo l’invito si entra direttamente nel countdown, senza passare dalla home.
+
+Con Supabase configurato, lo stesso link può essere aperto da più partecipanti: Presence mostra chi è online, i risultati compaiono appena ciascuno termina e **Gioca ancora** invia una richiesta di rivincita a tutto il gruppo. Alla prima accettazione parte un nuovo countdown condiviso, senza generare né inviare un altro link. Senza Supabase il link e la partenza sincronizzata continuano a funzionare, ma presenza, risultati live e rivincita interna non sono disponibili.
+
+## Classifica mondiale
+
+Le partite complete da dieci livelli possono aggiornare la classifica globale. L’accesso è anonimo e persistente sul browser: il giocatore sceglie soltanto un nickname. Le scritture dirette sono bloccate da Row Level Security e i risultati passano da una funzione SQL che verifica quantità dei livelli, intervallo dei punteggi, media, durata e frequenza degli invii. È una valida protezione per un gioco statico casual, ma non sostituisce un server autorevole contro un attaccante determinato.
 
 ## Allenamento
 

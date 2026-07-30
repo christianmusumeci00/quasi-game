@@ -1,10 +1,12 @@
 export function createChallengeSeed() {
   if (globalThis.crypto?.getRandomValues) {
-    const values = new Uint32Array(2);
+    // 128 bit casuali: il seed identifica anche la stanza Realtime privata,
+    // quindi deve essere impraticabile da indovinare oltre che riproducibile.
+    const values = new Uint32Array(4);
     globalThis.crypto.getRandomValues(values);
-    return `${values[0].toString(36)}${values[1].toString(36)}`;
+    return [...values].map((value) => value.toString(36).padStart(7, '0')).join('');
   }
-  return `${Date.now().toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}`;
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
 }
 
 export function encodeChallenge({ deck, seed, score = null, startAt = null }) {

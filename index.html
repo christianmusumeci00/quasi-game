@@ -13,7 +13,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png" />
     <link rel="manifest" href="site.webmanifest" />
-    <link rel="stylesheet" href="styles.css?v=20260730.21" />
+    <link rel="stylesheet" href="styles.css?v=20260730.29" />
   </head>
   <body>
     <div class="noise" aria-hidden="true"></div>
@@ -23,6 +23,9 @@
         <span>QUASI!</span><i aria-hidden="true"></i>
       </button>
       <div class="header-actions">
+        <button class="cloud-pill" id="online-status" type="button" aria-label="Apri la classifica mondiale">
+          <i aria-hidden="true"></i><span>LOCALE</span>
+        </button>
         <div class="best-pill" aria-label="Miglior punteggio">
           <span>BEST</span><strong id="header-best">—</strong>
         </div>
@@ -54,8 +57,12 @@
             <button class="secondary-button training-mode-button" id="training-button" type="button">
               <span>ALLENAMENTO</span><b aria-hidden="true">◎</b>
             </button>
+            <button class="secondary-button leaderboard-mode-button" id="leaderboard-button" type="button">
+              <span>CLASSIFICA MONDIALE</span><b aria-hidden="true">♛</b>
+            </button>
             <div class="hero-text-action">
               <button class="text-button" id="how-button" type="button">COME SI GIOCA?</button>
+              <button class="text-button" id="profile-button" type="button">PROFILO: <span id="profile-name">QUASI</span></button>
             </div>
           </div>
           <div class="support-cta">
@@ -97,6 +104,9 @@
             <span class="round-label"><span id="round-context">SFIDA</span> <b id="round-number">1</b><span id="round-total"> / 10</span></span>
             <div class="progress-track" aria-hidden="true"><span id="progress-fill"></span></div>
           </div>
+          <div class="live-room-pill" id="live-room-pill" hidden>
+            <i aria-hidden="true"></i><span><b id="live-player-count">1</b> ONLINE</span>
+          </div>
           <div class="running-score"><span id="running-label">MEDIA</span><strong id="running-score">—</strong></div>
         </div>
 
@@ -118,6 +128,11 @@
           <p class="eyebrow"><span></span> PARTITA COMPLETATA</p>
           <h1 id="result-title">CI SEI ANDATO<br /><em>MOLTO VICINO.</em></h1>
           <p id="result-summary">Una performance chirurgica.</p>
+          <section class="live-results-panel" id="live-results-panel" hidden aria-live="polite">
+            <div><span>RISULTATI LIVE</span><b id="live-results-count">0/0</b></div>
+            <ol id="live-results-list"></ol>
+          </section>
+          <p class="world-submit-status" id="world-submit-status" hidden></p>
           <div class="result-actions">
             <button class="primary-button" id="share-button" type="button"><span>CONDIVIDI RISULTATO</span><b>↗</b></button>
             <button class="secondary-button" id="compare-button" type="button" hidden>CONFRONTA CON UN AMICO</button>
@@ -140,7 +155,8 @@
         <li><b>10 sfide casuali</b><span>Ogni partita mescola precisione, memoria, coordinazione e riflessi.</span></li>
         <li><b>Da 0 a 100</b><span>Ogni gesto viene confrontato con il risultato ideale. Nessun bonus misterioso.</span></li>
         <li><b>Un grado finale</b><span>La media delle prove determina il tuo voto, da E fino all'introvabile S+.</span></li>
-        <li><b>Sfida un amico</b><span>Condividi il link, entrate nella lobby e iniziate insieme le stesse dieci prove.</span></li>
+        <li><b>Sfida realtime</b><span>Condividi il link: tutti entrano direttamente nel countdown, giocano insieme e vedono i risultati live.</span></li>
+        <li><b>Classifica mondiale</b><span>Scegli il tuo nome e prova a entrare nei record di sempre, della settimana o di oggi.</span></li>
         <li><b>Allenamento libero</b><span>Scegli un livello dal catalogo, ripetilo e prova a migliorare il tuo record personale.</span></li>
       </ol>
       <button class="primary-button dialog-start" type="button"><span>HO CAPITO, GIOCHIAMO</span><b>→</b></button>
@@ -154,6 +170,44 @@
       <input class="compare-input" id="compare-input" type="url" inputmode="url" autocomplete="off" placeholder="Incolla il link risultato" />
       <button class="primary-button compare-submit" id="compare-submit" type="button"><span>CONFRONTA</span><b>→</b></button>
       <div class="compare-output" id="compare-output" role="status" hidden></div>
+    </dialog>
+
+    <dialog class="leaderboard-dialog" id="leaderboard-dialog">
+      <button class="dialog-close" type="button" aria-label="Chiudi">×</button>
+      <p class="eyebrow"><span></span> RECORD GLOBALI</p>
+      <h2>CLASSIFICA<br />MONDIALE.</h2>
+      <div class="leaderboard-tabs" id="leaderboard-tabs" role="tablist" aria-label="Periodo della classifica">
+        <button type="button" data-period="all" class="is-active">DI SEMPRE</button>
+        <button type="button" data-period="week">7 GIORNI</button>
+        <button type="button" data-period="today">OGGI</button>
+      </div>
+      <div class="leaderboard-state" id="leaderboard-state" role="status">CARICAMENTO…</div>
+      <ol class="leaderboard-list" id="leaderboard-list"></ol>
+      <p class="leaderboard-note">I record provengono da partite complete da 10 livelli. I punteggi sospetti possono essere rimossi.</p>
+    </dialog>
+
+    <dialog class="profile-dialog" id="profile-dialog">
+      <button class="dialog-close" type="button" aria-label="Chiudi">×</button>
+      <p class="eyebrow"><span></span> IDENTITÀ DI GIOCO</p>
+      <h2>COME TI<br />CHIAMI?</h2>
+      <p>Questo nome apparirà nelle sfide live e nella classifica mondiale.</p>
+      <label class="profile-label" for="profile-input">NOME GIOCATORE</label>
+      <input id="profile-input" class="profile-input" type="text" minlength="2" maxlength="20" autocomplete="nickname" />
+      <p class="profile-message" id="profile-message" role="status"></p>
+      <button class="primary-button profile-save" id="profile-save" type="button"><span>SALVA PROFILO</span><b>→</b></button>
+    </dialog>
+
+    <dialog class="rematch-dialog" id="rematch-dialog">
+      <button class="dialog-close rematch-close" type="button" aria-label="Chiudi">×</button>
+      <p class="eyebrow"><span></span> SFIDA REALTIME</p>
+      <h2 id="rematch-title">RIVINCITA?</h2>
+      <p id="rematch-message">Un amico propone un’altra partita.</p>
+      <div class="rematch-acceptances" id="rematch-acceptances" aria-live="polite"></div>
+      <strong class="rematch-clock" id="rematch-clock" hidden>00:10</strong>
+      <div class="rematch-actions" id="rematch-actions">
+        <button class="primary-button" id="rematch-accept" type="button"><span>ACCETTA</span><b>→</b></button>
+        <button class="secondary-button" id="rematch-decline" type="button">NON ORA</button>
+      </div>
     </dialog>
 
     <dialog class="training-dialog" id="training-dialog">
@@ -187,6 +241,6 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <noscript>QUASI! richiede JavaScript per funzionare.</noscript>
-    <script type="module" src="js/app.js?v=20260730.21"></script>
+    <script type="module" src="js/app.js?v=20260730.29"></script>
   </body>
 </html>

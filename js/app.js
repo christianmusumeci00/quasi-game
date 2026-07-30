@@ -1,5 +1,17 @@
-import { CHALLENGES, FAMILY_COLORS, buildDeck } from './challenges.js?v=20260730.21';
-import { createChallengeSeed, decodeChallenge, encodeChallenge, seededRandom } from './challenge-mode.js?v=20260730.21';
+import { CHALLENGES, FAMILY_COLORS, buildDeck } from './challenges.js?v=20260730.29';
+import { createChallengeSeed, decodeChallenge, encodeChallenge, seededRandom } from './challenge-mode.js?v=20260730.29';
+import {
+  connectRealtimeRoom,
+  disconnectRealtimeRoom,
+  ensureOnlineProfile,
+  fetchWorldLeaderboard,
+  getPlayerName,
+  getRoomConnection,
+  isSupabaseConfigured,
+  savePlayerName,
+  submitWorldScore,
+  validatePlayerName,
+} from './online.js?v=20260730.29';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -30,6 +42,9 @@ const howDialog = $('#how-dialog');
 const compareDialog = $('#compare-dialog');
 const trainingDialog = $('#training-dialog');
 const trainingSearch = $('#training-search');
+const leaderboardDialog = $('#leaderboard-dialog');
+const profileDialog = $('#profile-dialog');
+const rematchDialog = $('#rematch-dialog');
 let trainingFamily = 'Tutte';
 
 function syncViewportHeight() {
@@ -69,7 +84,22 @@ const state = {
   challengeSeed: '',
   opponentScore: null,
   startAt: null,
+  roomId: null,
+  roomRound: 1,
+  gameStartedAt: 0,
   randomSource: Math.random,
+};
+
+const onlineState = {
+  room: null,
+  participants: [],
+  connectingRoomId: null,
+  pendingRematch: null,
+  ownRematch: null,
+  acceptedRematch: null,
+  acceptedNames: new Set(),
+  rematchTimer: null,
+  leaderboardPeriod: 'all',
 };
 
 const random = () => state.randomSource();
@@ -81,6 +111,9 @@ function challengeCodeFromUrl(url = new URL(window.location.href)) {
 
 $('#header-best').textContent = storedBest ? `${storedBest}` : '—';
 $('#sound-toggle').setAttribute('aria-pressed', String(state.sound));
+$('#profile-name').textContent = getPlayerName();
+$('#online-status span').textContent = isSupabaseConfigured() ? 'PRONTO' : 'LOCALE';
+$('#online-status').classList.toggle('is-online', isSupabaseConfigured());
 
 const decodedChallenge = decodeChallenge(
   challengeCodeFromUrl(),
@@ -136,6 +169,370 @@ function updateHomeAfterLiveGame(score) {
   $('.challenge-invite small').textContent = 'Condividi il risultato oppure crea una nuova sfida.';
   $('#challenge-button span').textContent = 'NUOVA SFIDA LIVE';
   $('#challenge-button').classList.add('has-invite');
+}
+
+function setOnlineStatus(label, status = '') {
+  const badge = $('#online-status');
+  $('span', badge).textContent = label;
+  badge.classList.toggle('is-online', status === 'online');
+  badge.classList.toggle('is-error', status === 'error');
+}
+
+function describeOnlineError(error, fallback) {
+  const message = String(error?.message || '');
+  if (/anonymous sign-ins are disabled/i.test(message)) {
+    return 'ABILITA “ALLOW ANONYMOUS SIGN-INS” IN SUPABASE AUTHENTICATION.';
+  }
+  if (/get_leaderboard|submit_score/i.test(message) && /does not exist|schema cache/i.test(message)) {
+    return 'ESEGUI DI NUOVO SUPABASE/SCHEMA.SQL NEL SQL EDITOR.';
+  }
+  return fallback;
+}
+
+function openManagedDialog(dialog) {
+  document.body.classList.add('modal-open');
+  if (!dialog.open) dialog.showModal();
+}
+
+function closeManagedDialog(dialog) {
+  if (dialog.open) dialog.close();
+  if (![leaderboardDialog, profileDialog, rematchDialog, trainingDialog, howDialog, compareDialog].some((item) => item.open)) {
+    document.body.classList.remove('modal-open');
+  }
+}
+
+function uniqueParticipants(entries) {
+  const byUser = new Map();
+  entries.forEach((entry) => {
+    if (!entry.userId) return;
+    const existing = byUser.get(entry.userId);
+    if (!existing || entry.status === 'finished' || Number(entry.round || 0) >= Number(existing.round || 0)) {
+      byUser.set(entry.userId, entry);
+    }
+  });
+  return [...byUser.values()];
+}
+
+function renderLivePresence(entries = onlineState.participants) {
+  onlineState.participants = uniqueParticipants(entries);
+  const pill = $('#live-room-pill');
+  const liveMode = state.mode.startsWith('challenge-live');
+  pill.hidden = !liveMode;
+  $('#live-player-count').textContent = String(Math.max(1, onlineState.participants.length));
+
+  const liveCopy = $('.live-start .countdown-copy p');
+  if (liveCopy && onlineState.participants.length) {
+    liveCopy.textContent = `${onlineState.participants.length} ${onlineState.participants.length === 1 ? 'giocatore connesso' : 'giocatori connessi'}. La partita partirà automaticamente.`;
+  }
+
+  const panel = $('#live-results-panel');
+  panel.hidden = !liveMode || resultScreen.classList.contains('is-active') === false;
+  if (panel.hidden) return;
+
+  const sorted = [...onlineState.participants].sort((first, second) => {
+    if (first.status === 'finished' && second.status !== 'finished') return -1;
+    if (second.status === 'finished' && first.status !== 'finished') return 1;
+    return Number(second.score || -1) - Number(first.score || -1);
+  });
+  const finished = sorted.filter((entry) => entry.status === 'finished').length;
+  $('#live-results-count').textContent = `${finished}/${sorted.length}`;
+  const list = $('#live-results-list');
+  list.replaceChildren(...sorted.map((entry, index) => {
+    const row = document.createElement('li');
+    const rank = document.createElement('b');
+    const name = document.createElement('span');
+    const result = document.createElement('em');
+    rank.textContent = String(index + 1);
+    name.textContent = entry.nickname || 'GIOCATORE';
+    result.textContent = entry.status === 'finished' ? `${entry.score}/100` : `LIVELLO ${entry.round || 1}`;
+    row.append(rank, name, result);
+    return row;
+  }));
+}
+
+async function trackLiveState(patch) {
+  const room = onlineState.room || getRoomConnection();
+  if (!room) return;
+  try { await room.track(patch); } catch { /* Presence is an enhancement; gameplay continues. */ }
+}
+
+function showRematchDialog(role, proposal) {
+  onlineState.pendingRematch = proposal;
+  clearInterval(onlineState.rematchTimer);
+  const isHost = role === 'host';
+  $('#rematch-title').textContent = isHost ? 'RICHIESTA INVIATA.' : `${proposal.senderName || 'UN AMICO'} VUOLE LA RIVINCITA.`;
+  $('#rematch-message').textContent = isHost
+    ? 'Aspettiamo che almeno un amico accetti. Non serve inviare un altro link.'
+    : 'Accetta per giocare ancora con lo stesso gruppo, senza aprire altri link.';
+  $('#rematch-actions').hidden = isHost;
+  $('#rematch-clock').hidden = !proposal.startAt;
+  $('#rematch-acceptances').textContent = isHost
+    ? `${onlineState.acceptedNames.size} pronto${onlineState.acceptedNames.size === 1 ? '' : 'i'}`
+    : 'La richiesta scade fra un minuto.';
+
+  if (proposal.startAt) {
+    const update = () => {
+      const remaining = Math.max(0, proposal.startAt - Date.now());
+      $('#rematch-clock').textContent = formatClock(remaining);
+      if (remaining <= 0) clearInterval(onlineState.rematchTimer);
+    };
+    update();
+    onlineState.rematchTimer = setInterval(update, 250);
+  }
+  openManagedDialog(rematchDialog);
+}
+
+function beginAcceptedRematch(proposal) {
+  clearInterval(onlineState.rematchTimer);
+  const deck = proposal.deck?.map((id) => challengeCatalog.get(id)).filter(Boolean) || [];
+  if (deck.length !== 10 || new Set(deck.map((challenge) => challenge.kind)).size !== 10) {
+    showToast('Rivincita non valida: crea una nuova sfida dalla home.');
+    return;
+  }
+  closeManagedDialog(rematchDialog);
+  const mode = state.mode === 'challenge-live-host' ? 'challenge-live-host' : 'challenge-live-guest';
+  onlineState.pendingRematch = null;
+  onlineState.ownRematch = null;
+  onlineState.acceptedRematch = null;
+  onlineState.acceptedNames = new Set();
+  startGame({
+    mode,
+    deck,
+    seed: proposal.seed,
+    startAt: proposal.startAt,
+    roomId: state.roomId,
+    roomRound: proposal.roomRound,
+  });
+}
+
+async function handleRealtimeEvent(payload) {
+  if (!payload?.type || payload.senderId === onlineState.room?.profile?.userId) return;
+  if (payload.type === 'score') {
+    if (resultScreen.classList.contains('is-active')) showToast(`${payload.senderName} ha finito: ${payload.score}/100`);
+    return;
+  }
+  if (payload.type === 'rematch_request') {
+    if (Number(payload.expiresAt) <= Date.now()) return;
+    onlineState.pendingRematch = payload;
+    onlineState.acceptedRematch = null;
+    if (resultScreen.classList.contains('is-active')) showRematchDialog('guest', payload);
+    else showToast(`${payload.senderName} propone una rivincita: termina questa partita per rispondere.`);
+    return;
+  }
+  if (payload.type === 'rematch_accept') {
+    if (payload.proposalId !== onlineState.ownRematch?.proposalId) return;
+    onlineState.acceptedNames.add(payload.senderName || 'Un amico');
+    $('#rematch-acceptances').textContent = `${payload.senderName || 'Un amico'} ha accettato!`;
+    if (!onlineState.ownRematch.startAt) {
+      onlineState.ownRematch = { ...onlineState.ownRematch, startAt: Date.now() + 10000 };
+      try {
+        await onlineState.room.send('rematch_start', onlineState.ownRematch);
+        beginAcceptedRematch(onlineState.ownRematch);
+      } catch {
+        showToast('Non riesco ad avviare la rivincita. Riprova.');
+      }
+    }
+    return;
+  }
+  if (payload.type === 'rematch_start') {
+    if (payload.proposalId !== onlineState.pendingRematch?.proposalId) return;
+    onlineState.pendingRematch = { ...onlineState.pendingRematch, ...payload };
+    if (onlineState.acceptedRematch?.proposalId === payload.proposalId) beginAcceptedRematch(onlineState.pendingRematch);
+    else if (resultScreen.classList.contains('is-active')) showRematchDialog('guest', onlineState.pendingRematch);
+    else showToast('La rivincita è pronta: potrai entrare appena finisci.');
+  }
+}
+
+async function connectGameRealtime() {
+  if (!state.mode.startsWith('challenge-live')) {
+    $('#live-room-pill').hidden = true;
+    return;
+  }
+  $('#live-room-pill').hidden = false;
+  if (!isSupabaseConfigured()) {
+    $('#live-room-pill').hidden = true;
+    setOnlineStatus('LOCALE', 'error');
+    return;
+  }
+  const roomId = state.roomId;
+  if (onlineState.room?.roomId === roomId) {
+    await trackLiveState({ status: 'playing', score: null, grade: null, round: state.round + 1, roomRound: state.roomRound });
+    return;
+  }
+  if (onlineState.connectingRoomId === roomId) return;
+  onlineState.connectingRoomId = roomId;
+  setOnlineStatus('CONNESSIONE');
+  try {
+    const room = await connectRealtimeRoom({
+      roomId,
+      nickname: getPlayerName(),
+      presence: { status: 'playing', round: state.round + 1, roomRound: state.roomRound },
+      onPresence: (participants) => {
+        if (state.roomId === roomId) renderLivePresence(participants);
+      },
+      onEvent: handleRealtimeEvent,
+      onStatus: (status) => {
+        if (status === 'SUBSCRIBED') setOnlineStatus('ONLINE', 'online');
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') setOnlineStatus('ERRORE', 'error');
+      },
+    });
+    if (state.roomId !== roomId) {
+      await disconnectRealtimeRoom();
+      return;
+    }
+    onlineState.room = room;
+    setOnlineStatus('ONLINE', 'online');
+  } catch (error) {
+    console.error('QUASI! Realtime connection failed:', error);
+    setOnlineStatus('OFFLINE', 'error');
+    showToast('Realtime non disponibile: la partita continua normalmente.');
+  } finally {
+    onlineState.connectingRoomId = null;
+  }
+}
+
+async function proposeRematch() {
+  if (!isSupabaseConfigured() || !onlineState.room) {
+    showToast('Configura Supabase per proporre una rivincita senza nuovo link.');
+    return;
+  }
+  const deck = buildDeck(10, {
+    excludedKinds: storedList('quasi-recent-kinds'),
+    excludedIds: storedList('quasi-recent-levels'),
+  });
+  const proposal = {
+    proposalId: `${Date.now().toString(36)}-${createChallengeSeed().slice(0, 8)}`,
+    deck: deck.map((challenge) => challenge.id),
+    seed: createChallengeSeed(),
+    roomRound: state.roomRound + 1,
+    expiresAt: Date.now() + 60000,
+  };
+  onlineState.ownRematch = proposal;
+  onlineState.pendingRematch = proposal;
+  onlineState.acceptedNames = new Set([getPlayerName()]);
+  showRematchDialog('host', proposal);
+  try {
+    await onlineState.room.send('rematch_request', proposal);
+  } catch {
+    closeManagedDialog(rematchDialog);
+    showToast('Richiesta non inviata. Controlla la connessione e riprova.');
+  }
+}
+
+async function acceptRematch() {
+  const proposal = onlineState.pendingRematch;
+  if (!proposal || Number(proposal.expiresAt) <= Date.now()) {
+    closeManagedDialog(rematchDialog);
+    showToast('Questa richiesta di rivincita è scaduta.');
+    return;
+  }
+  onlineState.acceptedRematch = proposal;
+  $('#rematch-actions').hidden = true;
+  $('#rematch-message').textContent = 'Accettata! Attendiamo il countdown del gruppo.';
+  $('#rematch-acceptances').textContent = 'SEI PRONTO ✓';
+  try {
+    await onlineState.room.send('rematch_accept', { proposalId: proposal.proposalId });
+    if (proposal.startAt) beginAcceptedRematch(proposal);
+  } catch {
+    $('#rematch-actions').hidden = false;
+    showToast('Accettazione non inviata. Riprova.');
+  }
+}
+
+async function openLeaderboard(period = onlineState.leaderboardPeriod) {
+  onlineState.leaderboardPeriod = period;
+  $$('#leaderboard-tabs button').forEach((button) => button.classList.toggle('is-active', button.dataset.period === period));
+  $('#leaderboard-list').replaceChildren();
+  $('#leaderboard-state').hidden = false;
+  $('#leaderboard-state').textContent = isSupabaseConfigured() ? 'CARICAMENTO…' : 'CONFIGURA SUPABASE PER ATTIVARE LA CLASSIFICA MONDIALE.';
+  openManagedDialog(leaderboardDialog);
+  if (!isSupabaseConfigured()) return;
+  try {
+    const { rows, userId } = await fetchWorldLeaderboard(period);
+    setOnlineStatus('ONLINE', 'online');
+    $('#leaderboard-state').hidden = rows.length > 0;
+    if (!rows.length) $('#leaderboard-state').textContent = 'NESSUN RECORD IN QUESTO PERIODO. PUOI ESSERE IL PRIMO.';
+    $('#leaderboard-list').replaceChildren(...rows.map((entry) => {
+      const row = document.createElement('li');
+      row.className = `leaderboard-row${entry.is_current_player || entry.user_id === userId ? ' is-player' : ''}`;
+      const rank = document.createElement('span');
+      rank.className = 'leaderboard-rank';
+      rank.textContent = `#${entry.rank_position}`;
+      const player = document.createElement('span');
+      player.className = 'leaderboard-player';
+      const name = document.createElement('strong');
+      const meta = document.createElement('small');
+      name.textContent = entry.nickname;
+      meta.textContent = `${entry.games_played} PARTITE · MEDIA ${Number(entry.average_score).toFixed(1)}`;
+      player.append(name, meta);
+      const score = document.createElement('strong');
+      score.className = 'leaderboard-score';
+      score.textContent = entry.best_score;
+      row.append(rank, player, score);
+      return row;
+    }));
+  } catch (error) {
+    console.error('QUASI! leaderboard request failed:', error);
+    setOnlineStatus('CONFIG', 'error');
+    $('#leaderboard-state').hidden = false;
+    $('#leaderboard-state').textContent = describeOnlineError(
+      error,
+      'CLASSIFICA NON DISPONIBILE. CONTROLLA LA CONFIGURAZIONE SUPABASE.',
+    );
+  }
+}
+
+function openProfile() {
+  $('#profile-input').value = getPlayerName();
+  $('#profile-message').textContent = isSupabaseConfigured() ? 'Il profilo verrà sincronizzato online.' : 'Profilo locale: collega Supabase per apparire in classifica.';
+  openManagedDialog(profileDialog);
+  $('#profile-input').focus({ preventScroll: true });
+}
+
+async function saveProfile() {
+  const input = $('#profile-input');
+  const validation = validatePlayerName(input.value);
+  if (!validation.ok) {
+    $('#profile-message').textContent = validation.message;
+    return;
+  }
+  $('#profile-save').disabled = true;
+  $('#profile-message').textContent = 'SALVATAGGIO…';
+  try {
+    const profile = await savePlayerName(validation.nickname);
+    $('#profile-name').textContent = profile.nickname;
+    $('#profile-message').textContent = profile.localOnly ? 'Salvato sul dispositivo.' : 'Profilo sincronizzato ✓';
+    if (!profile.localOnly) setOnlineStatus('ONLINE', 'online');
+    setTimeout(() => closeManagedDialog(profileDialog), 650);
+  } catch (error) {
+    console.error('QUASI! profile save failed:', error);
+    setOnlineStatus('CONFIG', 'error');
+    $('#profile-message').textContent = error?.code === '23505'
+      ? 'Questo nome è già stato scelto.'
+      : describeOnlineError(error, 'Salvataggio non riuscito. Riprova.');
+  } finally {
+    $('#profile-save').disabled = false;
+  }
+}
+
+async function publishWorldScore(score) {
+  const status = $('#world-submit-status');
+  status.hidden = true;
+  if (!isSupabaseConfigured() || state.mode === 'training' || state.results.length !== 10) return;
+  status.hidden = false;
+  status.textContent = 'AGGIORNAMENTO CLASSIFICA MONDIALE…';
+  try {
+    const result = await submitWorldScore({
+      score,
+      mode: state.mode.includes('challenge') ? 'challenge' : 'solo',
+      durationMs: Date.now() - state.gameStartedAt,
+      levelScores: state.results.map((entry) => entry.score),
+    });
+    status.textContent = `CLASSIFICA AGGIORNATA · RECORD ${result.best_score}/100 · POSIZIONE #${result.world_position}`;
+  } catch (error) {
+    console.error('QUASI! score submission failed:', error);
+    status.textContent = 'CLASSIFICA NON AGGIORNATA · RIPROVA CON LA PROSSIMA PARTITA';
+  }
 }
 
 function showScreen(screen) {
@@ -282,7 +679,15 @@ function scoreMessage(score) {
   return 'IL CAOS HA VINTO.';
 }
 
-function startGame({ mode = 'solo', deck = null, opponentScore = null, seed = null, startAt = null } = {}) {
+function startGame({
+  mode = 'solo',
+  deck = null,
+  opponentScore = null,
+  seed = null,
+  startAt = null,
+  roomId = null,
+  roomRound = 1,
+} = {}) {
   clearChallenge();
   const recentKinds = storedList('quasi-recent-kinds');
   const recentIds = storedList('quasi-recent-levels');
@@ -291,6 +696,16 @@ function startGame({ mode = 'solo', deck = null, opponentScore = null, seed = nu
   state.opponentScore = opponentScore;
   state.challengeSeed = seed || createChallengeSeed();
   state.startAt = startAt;
+  state.roomId = mode.startsWith('challenge-live') ? (roomId || state.roomId || state.challengeSeed) : null;
+  state.roomRound = mode.startsWith('challenge-live') ? Math.max(1, Number(roomRound) || 1) : 1;
+  state.gameStartedAt = Date.now();
+  $('#world-submit-status').hidden = true;
+  $('#live-results-panel').hidden = true;
+  if (!mode.startsWith('challenge-live')) {
+    onlineState.room = null;
+    onlineState.participants = [];
+    void disconnectRealtimeRoom();
+  }
   if (mode !== 'training') {
     localStorage.setItem('quasi-recent-kinds', JSON.stringify(state.deck.map((challenge) => challenge.kind)));
     const updatedRecentIds = [...state.deck.map((challenge) => challenge.id), ...recentIds]
@@ -305,6 +720,7 @@ function startGame({ mode = 'solo', deck = null, opponentScore = null, seed = nu
   if (trainingDialog.open) trainingDialog.close();
   showScreen(gameScreen);
   renderChallenge();
+  void connectGameRealtime();
 }
 
 function renderChallenge() {
@@ -329,6 +745,15 @@ function renderChallenge() {
   challengeCard.dataset.challengeId = challenge.id;
   challengeCard.dataset.kind = challenge.kind;
   challengeCard.dataset.variant = challenge.config.mode || challenge.config.shape || challenge.config.path || '';
+  if (state.mode.startsWith('challenge-live')) {
+    void trackLiveState({
+      status: 'playing',
+      score: null,
+      grade: null,
+      round: state.round + 1,
+      roomRound: state.roomRound,
+    });
+  }
 
   const renderer = renderers[challenge.kind];
   if (!renderer) {
@@ -468,6 +893,28 @@ function finishGame() {
   }
   drawResultCard(finalScore, grade);
   showScreen(resultScreen);
+  if (state.mode.startsWith('challenge-live')) {
+    const liveResult = {
+      status: 'finished',
+      score: finalScore,
+      grade,
+      round: state.deck.length,
+      roomRound: state.roomRound,
+    };
+    void trackLiveState(liveResult);
+    if (onlineState.room) {
+      void onlineState.room.send('score', liveResult).catch(() => {
+        showToast('Risultato live non inviato: controllo la connessione.');
+      });
+    }
+    renderLivePresence();
+    if (onlineState.pendingRematch
+      && onlineState.pendingRematch !== onlineState.ownRematch
+      && Number(onlineState.pendingRematch.expiresAt) > Date.now()) {
+      showRematchDialog('guest', onlineState.pendingRematch);
+    }
+  }
+  void publishWorldScore(finalScore);
 }
 
 function getGrade(score) {
@@ -895,17 +1342,23 @@ function renderMeasure(config) {
 
 function renderAngle(config) {
   const dial=document.createElement('div');dial.className='angle-dial';
-  const baseAngle=config.base||0;
-  const targetMagnitude=smallestAngleBetween(config.target,baseAngle);
+  const configuredBase=Number(config.base)||0;
+  const targetMagnitude=config.reference
+    ? smallestAngleBetween(Number(config.target),configuredBase)
+    : clamp(Math.abs(Number(config.target)-configuredBase),0,180);
+  const baseAngle=random()*360;
+  const referenceDirection=random()<.5?-1:1;
+  const referenceAngle=(baseAngle+referenceDirection*targetMagnitude+360)%360;
+  let value=random()*360;
+  while(smallestAngleBetween(value,baseAngle)<18||Math.abs(smallestAngleBetween(value,baseAngle)-targetMagnitude)<24)value=random()*360;
   const base=document.createElement('i');base.className='angle-arm base';base.style.transform=`rotate(${baseAngle}deg)`;
-  const user=document.createElement('i');user.className='angle-arm user';user.style.transform='rotate(20deg)';
+  const user=document.createElement('i');user.className='angle-arm user';user.style.transform=`rotate(${value}deg)`;
   dial.append(base,user);
-  if(config.reference){const ref=document.createElement('i');ref.className='angle-arm reference';ref.style.transform=`rotate(${config.target}deg)`;dial.append(ref);}
+  if(config.reference){const ref=document.createElement('i');ref.className='angle-arm reference';ref.style.transform=`rotate(${referenceAngle}deg)`;dial.append(ref);}
   const center=document.createElement('i');center.className='angle-center';
-  const valueLabel=document.createElement('span');valueLabel.className='angle-value';valueLabel.textContent=config.reference?'COPIA IL MODELLO':`TARGET ${config.base ? '90° RELATIVI' : config.target+'°'}`;
+  const valueLabel=document.createElement('span');valueLabel.className='angle-value';valueLabel.textContent=config.reference?'COPIA IL MODELLO':`TARGET ${round(targetMagnitude)}°`;
   dial.append(center,valueLabel);stage.append(dial);
   const confirm=makeButton('CONFERMA L’ANGOLO');confirm.disabled=true;controls.append(confirm);
-  let value=20;
   const update=(event)=>{const rect=dial.getBoundingClientRect();let degrees=Math.atan2(event.clientY-(rect.top+rect.height/2),event.clientX-(rect.left+rect.width/2))*180/Math.PI;if(degrees<0)degrees+=360;value=degrees;user.style.transform=`rotate(${value}deg)`;confirm.disabled=false;};
   dial.addEventListener('pointerdown',(event)=>{dial.setPointerCapture(event.pointerId);update(event);});dial.addEventListener('pointermove',(event)=>{if(dial.hasPointerCapture(event.pointerId))update(event);});
   confirm.addEventListener('click',()=>{const chosenMagnitude=smallestAngleBetween(value,baseAngle);const error=Math.abs(chosenMagnitude-targetMagnitude);challengeResult(accuracy(error,12),`Scarto angolare: ${error.toFixed(1)}°.`);});
@@ -1267,6 +1720,17 @@ async function launchLiveChallenge() {
   const deck = buildDeck(10, { excludedKinds: recentKinds, excludedIds: recentIds });
   const seed = createChallengeSeed();
   const startAt = Date.now() + 60_000;
+  if (isSupabaseConfigured()) {
+    setOnlineStatus('CONNESSIONE');
+    try {
+      await ensureOnlineProfile(getPlayerName());
+      setOnlineStatus('ONLINE', 'online');
+    } catch {
+      setOnlineStatus('OFFLINE', 'error');
+      showToast('Profilo online non disponibile: controlla Supabase.');
+      return;
+    }
+  }
   const url = buildChallengeUrl({ deck, seed, startAt });
   const shareData = {
     title: 'Entra nella mia sfida live a QUASI!',
@@ -1274,7 +1738,7 @@ async function launchLiveChallenge() {
     url,
   };
   if (!await shareChallengeLink(shareData, 'Link copiato: invialo subito al tuo amico!')) return;
-  startGame({ mode: 'challenge-live-host', deck, seed, startAt });
+  startGame({ mode: 'challenge-live-host', deck, seed, startAt, roomId: seed, roomRound: 1 });
 }
 
 async function shareResult() {
@@ -1417,18 +1881,20 @@ $('#challenge-button').addEventListener('click',()=>{
       opponentScore: incomingChallenge.score,
       seed: incomingChallenge.seed,
       startAt: incomingChallenge.startAt,
+      roomId: live ? incomingChallenge.seed : null,
+      roomRound: 1,
     });
   } else launchLiveChallenge();
 });
 $('.dialog-start').addEventListener('click',()=>startGame({mode:'solo'}));
 $('#restart-button').addEventListener('click',()=>{
-  if (state.mode.startsWith('challenge-live')) launchLiveChallenge();
+  if (state.mode.startsWith('challenge-live')) void proposeRematch();
   else if (state.mode === 'challenge-guest') {
     startGame({mode:state.mode,deck:state.deck,opponentScore:state.opponentScore,seed:state.challengeSeed});
   } else startGame({mode:state.mode});
 });
-$('#how-button').addEventListener('click',()=>howDialog.showModal());
-$$('.dialog-close').forEach((button)=>button.addEventListener('click',()=>button.closest('dialog').close()));
+$('#how-button').addEventListener('click',()=>openManagedDialog(howDialog));
+$$('.dialog-close').forEach((button)=>button.addEventListener('click',()=>closeManagedDialog(button.closest('dialog'))));
 $('#next-button').addEventListener('click',()=>{
   feedbackLayer.hidden = true;
   if (state.mode === 'training') {
@@ -1438,12 +1904,53 @@ $('#next-button').addEventListener('click',()=>{
 });
 $('#training-back-button').addEventListener('click', returnToTrainingCatalog);
 $('#share-button').addEventListener('click',shareResult);
-$('#compare-button').addEventListener('click',()=>{$('#compare-output').hidden=true;$('#compare-input').value='';compareDialog.showModal();$('#compare-input').focus();});
+$('#compare-button').addEventListener('click',()=>{$('#compare-output').hidden=true;$('#compare-input').value='';openManagedDialog(compareDialog);$('#compare-input').focus();});
 $('#compare-submit').addEventListener('click',compareFriendResult);
 $('#compare-input').addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();compareFriendResult();}});
 $('#download-button').addEventListener('click',downloadResult);
+$('#leaderboard-button').addEventListener('click', () => void openLeaderboard('all'));
+$('#online-status').addEventListener('click', () => void openLeaderboard(onlineState.leaderboardPeriod));
+$('#leaderboard-tabs').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-period]');
+  if (button) void openLeaderboard(button.dataset.period);
+});
+$('#profile-button').addEventListener('click', openProfile);
+$('#profile-save').addEventListener('click', () => void saveProfile());
+$('#profile-input').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    void saveProfile();
+  }
+});
+$('#rematch-accept').addEventListener('click', () => void acceptRematch());
+$('#rematch-decline').addEventListener('click', () => {
+  onlineState.acceptedRematch = null;
+  closeManagedDialog(rematchDialog);
+});
 $('#sound-toggle').addEventListener('click',()=>{state.sound=!state.sound;localStorage.setItem('quasi-sound',state.sound?'on':'off');$('#sound-toggle').setAttribute('aria-pressed',String(state.sound));$('#sound-toggle').setAttribute('aria-label',state.sound?'Disattiva suoni':'Attiva suoni');if(state.sound)tone(600);});
-$$('[data-go-home]').forEach(button=>button.addEventListener('click',()=>{clearChallenge();feedbackLayer.hidden=true;showScreen(homeScreen);}));
+$$('[data-go-home]').forEach(button=>button.addEventListener('click',()=>{
+  clearChallenge();
+  feedbackLayer.hidden=true;
+  clearInterval(onlineState.rematchTimer);
+  onlineState.room=null;
+  onlineState.participants=[];
+  onlineState.pendingRematch=null;
+  onlineState.ownRematch=null;
+  onlineState.acceptedRematch=null;
+  void disconnectRealtimeRoom();
+  $('#live-room-pill').hidden=true;
+  $('#live-results-panel').hidden=true;
+  setOnlineStatus(isSupabaseConfigured()?'PRONTO':'LOCALE',isSupabaseConfigured()?'online':'');
+  showScreen(homeScreen);
+}));
+
+[leaderboardDialog, profileDialog, rematchDialog, howDialog, compareDialog].forEach((dialog) => {
+  dialog.addEventListener('close', () => {
+    if (![leaderboardDialog, profileDialog, rematchDialog, trainingDialog, howDialog, compareDialog].some((item) => item.open)) {
+      document.body.classList.remove('modal-open');
+    }
+  });
+});
 
 // Exposed only for lightweight automated smoke tests; it has no gameplay side effects.
 window.QUASI = {
@@ -1485,5 +1992,7 @@ if (qaResultMode) {
     deck: incomingChallenge.deck.map((id) => challengeCatalog.get(id)),
     seed: incomingChallenge.seed,
     startAt: incomingChallenge.startAt,
+    roomId: incomingChallenge.seed,
+    roomRound: 1,
   });
 }
