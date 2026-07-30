@@ -180,7 +180,7 @@ const precisionLevels = [
   ['precision-pin', 'Testa di spillo', 695, 92, 13, 8], ['precision-corner', 'Angolo lontano', 170, 255, 16, 10],
   ['precision-crowd', 'Uno fra molti', 470, 170, 18, 22], ['precision-edge', 'Sul bordo', 790, 165, 14, 14],
   ['precision-center', 'Centro microscopico', 450, 165, 10, 16],
-].map(([id, name, x, y, radius, distractors]) => ({ id, family: 'Mira', name, instruction: 'Tocca il piccolo bersaglio arancione con la massima precisione.', kind: 'precision', config: { x, y, radius, distractors } }));
+].map(([id, name, x, y, radius, distractors]) => ({ id, family: 'Mira', name, instruction: 'Tocca il bersaglio arancione il più vicino possibile al centro.', kind: 'precision', config: { x, y, radius, distractors } }));
 
 const symmetryLevels = [
   ['mirror-v-left', 'Specchio verticale', 'vertical', 285, 92], ['mirror-v-low', 'Riflesso in basso', 'vertical', 330, 255],

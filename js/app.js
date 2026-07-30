@@ -1,5 +1,5 @@
-import { CHALLENGES, FAMILY_COLORS, buildDeck } from './challenges.js';
-import { createChallengeSeed, decodeChallenge, encodeChallenge, seededRandom } from './challenge-mode.js';
+import { CHALLENGES, FAMILY_COLORS, buildDeck } from './challenges.js?v=20260730.19';
+import { createChallengeSeed, decodeChallenge, encodeChallenge, seededRandom } from './challenge-mode.js?v=20260730.19';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -15,6 +15,7 @@ const isLocalQa = ['localhost', '127.0.0.1'].includes(window.location.hostname);
 const qaLevelId = isLocalQa ? pageParams.get('qa-level') : null;
 const qaResultMode = isLocalQa && pageParams.has('qa-result');
 const qaCountdown = Boolean(qaLevelId && pageParams.has('qa-countdown'));
+const qaTouchLayout = isLocalQa && pageParams.has('qa-touch');
 ['count-7', 'count-11', 'count-14-fast', 'count-9-fakes', 'count-16-fakes']
   .forEach((legacyId) => challengeCatalog.set(legacyId, challengeCatalog.get('count-unknown')));
 
@@ -73,11 +74,16 @@ const state = {
 
 const random = () => state.randomSource();
 
+function challengeCodeFromUrl(url = new URL(window.location.href)) {
+  const hashParams = new URLSearchParams(url.hash.replace(/^#/, ''));
+  return hashParams.get('challenge') || url.searchParams.get('challenge') || '';
+}
+
 $('#header-best').textContent = storedBest ? `${storedBest}` : '—';
 $('#sound-toggle').setAttribute('aria-pressed', String(state.sound));
 
 const decodedChallenge = decodeChallenge(
-  pageParams.get('challenge') || '',
+  challengeCodeFromUrl(),
   new Set(challengeCatalog.keys()),
 );
 const incomingChallenge = decodedChallenge
@@ -972,10 +978,31 @@ function renderReaction(config) {
   zone.innerHTML='<strong>ASPETTA…</strong>';let ready=false;let readyTime=0;let timeout;
   const targetSymbol = config.targetSymbol || '★';
   const pace = config.pace || 520;
-  const activate=()=>{ready=true;readyTime=performance.now();zone.classList.add('ready');$('strong',zone).textContent=config.mode==='symbol'?targetSymbol:'ORA!';tone(720);};
+  const symbolMode = config.mode === 'symbol';
+  zone.classList.toggle('symbol-mode', symbolMode);
+  const activate=()=>{
+    ready=true;
+    readyTime=performance.now();
+    $('strong',zone).textContent=symbolMode?targetSymbol:'ORA!';
+    // Nei livelli a simboli il bersaglio deve essere l'unico indizio: nessun
+    // cambio di sfondo, animazione o suono diverso dalle esche.
+    if(!symbolMode){zone.classList.add('ready');tone(720);}
+  };
   if(config.mode==='green') timeout=setTimeout(activate,(config.pace || 1100)+random()*Math.max(500, 2800-(config.pace || 1100)));
   else{
-    const symbols=['●','▲','◆','■','✚'].filter(symbol=>symbol!==targetSymbol);let count=0;const cycle=()=>{if(count++>=2+Math.floor(random()*3)){activate();return;}$('strong',zone).textContent=symbols[Math.floor(random()*symbols.length)];timeout=setTimeout(cycle,pace);};timeout=setTimeout(cycle,Math.max(420,pace));
+    const symbols=['●','▲','◆','■','✚'].filter(symbol=>symbol!==targetSymbol);
+    const distractorCount=3+Math.floor(random()*4);
+    let count=0;
+    const nextDelay=()=>Math.max(220,pace*(.68+random()*.72));
+    const cycle=()=>{
+      if(count>=distractorCount){activate();return;}
+      $('strong',zone).textContent=symbols[Math.floor(random()*symbols.length)];
+      count+=1;
+      timeout=setTimeout(cycle,nextDelay());
+    };
+    // Anche l'arrivo della prima esca è variabile: non nasce una cadenza
+    // prevedibile che anticipi l'apparizione del simbolo corretto.
+    timeout=setTimeout(cycle,Math.max(320,pace*(.75+random()*.65)));
   }
   registerCleanup(()=>clearTimeout(timeout));
   const react=()=>{if(state.locked)return;if(!ready){clearTimeout(timeout);challengeResult(0,'Falsa partenza: hai toccato troppo presto.');return;}const ms=performance.now()-readyTime;const score=accuracy(Math.max(0,ms-155),370);challengeResult(score,`Tempo di reazione: ${Math.round(ms)} ms.`);};
@@ -1019,14 +1046,22 @@ function renderPrecision(config) {
   const canvasHeight=900;const yScale=canvasHeight/330;
   const {canvas,ctx,pointFromEvent}=makeCanvas(canvasHeight,900);
   const target={x:config.x,y:config.y*yScale};
+  const touchLayout=qaTouchLayout||window.matchMedia?.('(pointer: coarse)').matches===true||navigator.maxTouchPoints>0||window.innerWidth<=800;
+  // Anche nel viewport mobile più basso il disco resta almeno quanto un
+  // bersaglio touch reale (circa 44 px di diametro sullo schermo).
+  const renderedCanvasWidth=canvas.getBoundingClientRect().width||Math.min(window.innerWidth,900);
+  const touchMinimumRadius=clamp(23*canvas.width/renderedCanvasWidth,82,120);
+  const targetRadius=touchLayout?Math.max(touchMinimumRadius,config.radius*3.6):config.radius;
+  if(touchLayout){target.x=clamp(target.x,targetRadius+16,canvas.width-targetRadius-16);target.y=clamp(target.y,targetRadius+16,canvas.height-targetRadius-16);}
   const distractors=Array.from({length:config.distractors},(_,index)=>({
     x:70+((index*137+config.x*3)%760), y:90+((index*127+config.y*3)%720),
-    radius:10+(index%4)*3,
-  })).filter(point=>distance(point,target)>65);
+    radius:touchLayout?28+(index%4)*5:10+(index%4)*3,
+  })).filter(point=>distance(point,target)>targetRadius+60);
   ctx.clearRect(0,0,canvas.width,canvas.height);ctx.lineWidth=3;ctx.strokeStyle='#171513';
   distractors.forEach((point,index)=>{ctx.fillStyle=index%2?'#7558ff':'#ffc93d';ctx.beginPath();ctx.arc(point.x,point.y,point.radius,0,Math.PI*2);ctx.fill();ctx.stroke();});
-  ctx.fillStyle='#ff5b3d';ctx.beginPath();ctx.arc(target.x,target.y,config.radius,0,Math.PI*2);ctx.fill();ctx.stroke();
-  canvas.addEventListener('click',(event)=>{const selected=pointFromEvent(event);const error=distance(selected,target);challengeResult(accuracy(error,config.radius*1.75),`Distanza dal centro del bersaglio: ${error.toFixed(1)} px.`);});
+  if(touchLayout){const haloRadius=Math.min(targetRadius+12,target.x,canvas.width-target.x,target.y,canvas.height-target.y);ctx.strokeStyle='rgba(255,91,61,.3)';ctx.lineWidth=12;ctx.beginPath();ctx.arc(target.x,target.y,haloRadius,0,Math.PI*2);ctx.stroke();}
+  ctx.fillStyle='#ff5b3d';ctx.strokeStyle='#171513';ctx.lineWidth=touchLayout?6:3;ctx.beginPath();ctx.arc(target.x,target.y,targetRadius,0,Math.PI*2);ctx.fill();ctx.stroke();
+  canvas.addEventListener('click',(event)=>{const selected=pointFromEvent(event);const error=distance(selected,target);challengeResult(accuracy(error,targetRadius*1.45),`Distanza dal centro del bersaglio: ${error.toFixed(1)} px.`);});
 }
 
 function renderSymmetry(config) {
@@ -1103,15 +1138,21 @@ async function resultBlob() {
 }
 
 function buildChallengeUrl({ deck, seed, score = null, startAt = null }) {
-  const url = new URL(window.location.href);
+  // Ricava sempre la root reale dell'app dal modulo stesso: funziona sia su
+  // un sito utente sia dentro la sottocartella di un progetto GitHub Pages.
+  const url = new URL('../', import.meta.url);
   url.search = '';
   url.hash = '';
-  url.searchParams.set('challenge', encodeChallenge({
+  const hashParams = new URLSearchParams();
+  hashParams.set('challenge', encodeChallenge({
     deck: deck.map((challenge) => typeof challenge === 'string' ? challenge : challenge.id),
     seed,
     score,
     startAt,
   }));
+  // Il frammento non viene inviato al server: GitHub Pages riceve sempre la
+  // root esistente e non può mostrare una 404 prima dell'avvio dell'app.
+  url.hash = hashParams.toString();
   return url.toString();
 }
 
@@ -1201,7 +1242,7 @@ async function compareFriendResult() {
   const output = $('#compare-output');
   try {
     const url = new URL(value);
-    const payload = decodeChallenge(url.searchParams.get('challenge') || '', new Set(challengeCatalog.keys()));
+    const payload = decodeChallenge(challengeCodeFromUrl(url), new Set(challengeCatalog.keys()));
     if (!payload || payload.score === null) throw new Error('missing-result');
     if (payload.seed !== state.challengeSeed) throw new Error('different-match');
     const ownScore = Math.round(mean(state.results.map((result) => result.score)));
@@ -1405,6 +1446,7 @@ window.QUASI = {
   challengeCount: CHALLENGES.length,
   challengeIds: CHALLENGES.map((challenge) => challenge.id),
   buildDeck,
+  buildChallengeUrl,
   getGrade,
 };
 
