@@ -16,7 +16,7 @@ Il sito continuerà a essere pubblicato da GitHub Pages. Supabase fornisce solta
 
 1. Apri il sito in due browser diversi o in una finestra normale e una privata.
 2. Nel primo scegli **Sfida un amico**, copia il link e aprilo nel secondo.
-3. Verifica che entrambi mostrino due giocatori online e lo stesso countdown.
+3. Verifica che il primo browser resti in attesa senza scadenza e che, appena il secondo entra, entrambi mostrino due giocatori online e lo stesso countdown di 3 secondi.
 4. Termina la partita sui due dispositivi: entrambi devono mostrare i punteggi live.
 5. Premi **Gioca ancora**, accetta dall’altro dispositivo e verifica che la rivincita parta senza un nuovo link.
 6. Dalla home apri **Classifica mondiale** e verifica record e nickname.

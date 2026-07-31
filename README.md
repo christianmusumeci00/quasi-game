@@ -89,9 +89,9 @@ Per ridurre la monotonia, rispetto alla partita precedente vengono scelte 7 mecc
 
 ## Sfida un amico
 
-Chi crea la sfida condivide un link che contiene gli identificativi delle dieci prove, un seed casuale e l’orario comune di partenza. I dati sono nel frammento `#challenge`: GitHub Pages riceve sempre la root esistente e non mostra pagine 404. Aprendo l’invito si entra direttamente nel countdown, senza passare dalla home.
+Chi crea la sfida condivide un link che contiene gli identificativi delle dieci prove e un seed casuale. I dati sono nel frammento `#challenge`: GitHub Pages riceve sempre la root esistente e non mostra pagine 404. Il creatore resta nella stanza di attesa senza scadenza; quando almeno un altro giocatore apre l’invito, Supabase Presence avvia per tutti un countdown sincronizzato di 3 secondi.
 
-Con Supabase configurato, lo stesso link può essere aperto da più partecipanti: Presence mostra chi è online, i risultati compaiono appena ciascuno termina e **Gioca ancora** invia una richiesta di rivincita a tutto il gruppo. Alla prima accettazione parte un nuovo countdown condiviso, senza generare né inviare un altro link. Senza Supabase il link e la partenza sincronizzata continuano a funzionare, ma presenza, risultati live e rivincita interna non sono disponibili.
+Lo stesso link può essere aperto da più partecipanti: Presence mostra chi è online, i risultati compaiono appena ciascuno termina e **Gioca ancora** invia una richiesta di rivincita a tutto il gruppo. Alla prima accettazione parte un nuovo countdown condiviso, senza generare né inviare un altro link. La modalità Sfida live richiede Supabase; Giocatore singolo e Allenamento restano disponibili anche offline.
 
 ## Classifica mondiale
 

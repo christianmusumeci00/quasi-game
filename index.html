@@ -13,7 +13,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png" />
     <link rel="manifest" href="site.webmanifest" />
-    <link rel="stylesheet" href="styles.css?v=20260731.2" />
+    <link rel="stylesheet" href="styles.css?v=20260731.3" />
   </head>
   <body>
     <div class="noise" aria-hidden="true"></div>
@@ -135,7 +135,6 @@
           <p class="world-submit-status" id="world-submit-status" hidden></p>
           <div class="result-actions">
             <button class="primary-button" id="share-button" type="button"><span>CONDIVIDI RISULTATO</span><b>↗</b></button>
-            <button class="secondary-button" id="compare-button" type="button" hidden>CONFRONTA CON UN AMICO</button>
             <button class="secondary-button" id="download-button" type="button">SCARICA CARTA</button>
             <button class="text-button" id="restart-button" type="button">GIOCA ANCORA</button>
             <button class="text-button result-home-button" type="button" data-go-home>TORNA ALLA HOME</button>
@@ -155,21 +154,11 @@
         <li><b>10 sfide casuali</b><span>Ogni partita mescola precisione, memoria, coordinazione e riflessi.</span></li>
         <li><b>Da 0 a 100</b><span>Ogni gesto viene confrontato con il risultato ideale. Nessun bonus misterioso.</span></li>
         <li><b>Un grado finale</b><span>La media delle prove determina il tuo voto, da E fino all'introvabile S+.</span></li>
-        <li><b>Sfida realtime</b><span>Condividi il link: tutti entrano direttamente nel countdown, giocano insieme e vedono i risultati live.</span></li>
+        <li><b>Sfida realtime</b><span>Condividi il link: quando un amico entra nella stanza parte per tutti un countdown di 3 secondi, poi i risultati arrivano live.</span></li>
         <li><b>Classifiche mondiali</b><span>Scala la classifica generale oppure conquista il record di uno specifico livello.</span></li>
         <li><b>Allenamento libero</b><span>Scegli un livello dal catalogo, ripetilo e prova a migliorare il tuo record personale.</span></li>
       </ol>
       <button class="primary-button dialog-start" type="button"><span>HO CAPITO, GIOCHIAMO</span><b>→</b></button>
-    </dialog>
-
-    <dialog class="compare-dialog" id="compare-dialog">
-      <button class="dialog-close" type="button" aria-label="Chiudi">×</button>
-      <p class="eyebrow"><span></span> RISULTATI SFIDA</p>
-      <h2>CHI È STATO<br />PIÙ PRECISO?</h2>
-      <p>Fatti inviare il link risultato del tuo amico e incollalo qui.</p>
-      <input class="compare-input" id="compare-input" type="url" inputmode="url" autocomplete="off" placeholder="Incolla il link risultato" />
-      <button class="primary-button compare-submit" id="compare-submit" type="button"><span>CONFRONTA</span><b>→</b></button>
-      <div class="compare-output" id="compare-output" role="status" hidden></div>
     </dialog>
 
     <dialog class="leaderboard-dialog" id="leaderboard-dialog">
@@ -267,6 +256,6 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <noscript>QUASI! richiede JavaScript per funzionare.</noscript>
-    <script type="module" src="js/app.js?v=20260731.2"></script>
+    <script type="module" src="js/app.js?v=20260731.7"></script>
   </body>
 </html>

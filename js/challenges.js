@@ -51,7 +51,7 @@ const BASE_CHALLENGES = [
   { id: 'trace-s', family: 'Coordinazione', name: 'Curva a S', instruction: 'Segui il corridoio sinuoso con mano ferma.', kind: 'trace', config: { path: 's', width: 34 } },
   { id: 'trace-spiral', family: 'Coordinazione', name: 'Spirale chirurgica', instruction: 'Raggiungi il centro restando dentro la spirale.', kind: 'trace', config: { path: 'spiral', width: 35 } },
   { id: 'trace-gates', family: 'Coordinazione', name: 'Porte mobili', instruction: 'Attraversa tutte le porte seguendo la traiettoria ondulata.', kind: 'trace', config: { path: 'gates', width: 31 } },
-  { id: 'trace-steady', family: 'Coordinazione', name: 'Mano ferma', instruction: 'Mantieni il puntatore dentro il bersaglio fino alla fine.', kind: 'steady', config: { duration: 3200 } },
+  { id: 'trace-steady', family: 'Coordinazione', name: 'Mano ferma', instruction: 'Tieni premuto sul bersaglio e seguilo senza rilasciare.', kind: 'steady', config: { duration: 3200 } },
 
   { id: 'reaction-green', family: 'Riflessi', name: 'Verde!', instruction: 'Aspetta il verde. Toccare prima è una falsa partenza.', kind: 'reaction', config: { mode: 'green' } },
   { id: 'reaction-symbol', family: 'Riflessi', name: 'Solo il simbolo giusto', instruction: 'Tocca soltanto quando compare la stella. Ignora le esche.', kind: 'reaction', config: { mode: 'symbol' } },
@@ -158,7 +158,7 @@ const traceLevels = [
 const steadyLevels = [
   ['steady-slow', 'Orbita lenta', 3600, 185, 1.55, 48], ['steady-tight', 'Bersaglio stretto', 3200, 245, 2.15, 31],
   ['steady-vertical', 'Ascensore instabile', 3400, 115, 3.4, 39], ['steady-wide', 'Grande oscillazione', 3800, 315, 2.55, 42],
-].map(([id, name, duration, amplitudeX, speedY, radius]) => ({ id, family: 'Coordinazione', name, instruction: 'Tieni premuto e resta dentro il bersaglio in movimento fino alla fine.', kind: 'steady', config: { duration, amplitudeX, speedY, radius } }));
+].map(([id, name, duration, amplitudeX, speedY, radius]) => ({ id, family: 'Coordinazione', name, instruction: 'Tieni premuto sul bersaglio e seguilo senza rilasciare.', kind: 'steady', config: { duration, amplitudeX, speedY, radius } }));
 
 const reactionLevels = [
   ['react-green-short', 'Verde improvviso', 'green', 700, 0], ['react-green-long', 'Verde paziente', 'green', 2200, 0],

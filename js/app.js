@@ -1,5 +1,5 @@
-import { CHALLENGES, FAMILY_COLORS, buildDeck } from './challenges.js?v=20260730.31';
-import { createChallengeSeed, decodeChallenge, encodeChallenge, seededRandom } from './challenge-mode.js?v=20260730.31';
+import { CHALLENGES, FAMILY_COLORS, buildDeck } from './challenges.js?v=20260731.5';
+import { createChallengeSeed, decodeChallenge, encodeChallenge, seededRandom } from './challenge-mode.js?v=20260731.5';
 import {
   connectRealtimeRoom,
   disconnectRealtimeRoom,
@@ -41,7 +41,6 @@ const stage = $('#challenge-stage');
 const controls = $('#challenge-controls');
 const feedbackLayer = $('#feedback-layer');
 const howDialog = $('#how-dialog');
-const compareDialog = $('#compare-dialog');
 const trainingDialog = $('#training-dialog');
 const trainingSearch = $('#training-search');
 const leaderboardDialog = $('#leaderboard-dialog');
@@ -92,6 +91,7 @@ const state = {
   roomRound: 1,
   gameStartedAt: 0,
   challengeStartedAt: 0,
+  liveInviteUrl: '',
   randomSource: Math.random,
 };
 
@@ -134,7 +134,7 @@ const storedIncomingLiveResult = incomingChallenge
 const shouldAutoJoinLiveChallenge = Boolean(
   incomingChallenge
   && incomingChallenge.score === null
-  && incomingChallenge.startAt
+  && incomingChallenge.live
   && storedIncomingLiveResult === null
 );
 
@@ -148,10 +148,10 @@ if (incomingChallenge) {
       $('.challenge-invite small').textContent = savedScore > incomingChallenge.score ? 'Hai vinto la sfida!' : savedScore < incomingChallenge.score ? 'Questa volta ha vinto il tuo amico.' : 'Parità perfetta.';
       $('#challenge-button span').textContent = 'GIOCA LA RIVINCITA';
     } else updateHomeAfterLiveGame(savedScore);
-  } else if (incomingChallenge.score === null && incomingChallenge.startAt) {
+  } else if (incomingChallenge.score === null && incomingChallenge.live) {
     $('#challenge-invite > span').textContent = 'SFIDA LIVE';
-    $('.challenge-invite strong').innerHTML = '<b id="live-home-clock">--:--</b> ALLA PARTENZA';
-    $('.challenge-invite small').textContent = 'Entra ora: la partita inizierà per tutti allo stesso istante.';
+    $('.challenge-invite strong').innerHTML = '<b>INVITO</b> PRONTO';
+    $('.challenge-invite small').textContent = 'Entra nella stanza: il countdown partirà quando sarete collegati.';
     $('#challenge-button span').textContent = 'ENTRA NELLA LOBBY';
   } else {
     $('#opponent-score').textContent = incomingChallenge.score;
@@ -202,7 +202,7 @@ function openManagedDialog(dialog) {
 
 function closeManagedDialog(dialog) {
   if (dialog.open) dialog.close();
-  if (![leaderboardDialog, levelLeaderboardDialog, bestScoreDialog, profileDialog, rematchDialog, trainingDialog, howDialog, compareDialog].some((item) => item.open)) {
+  if (![leaderboardDialog, levelLeaderboardDialog, bestScoreDialog, profileDialog, rematchDialog, trainingDialog, howDialog].some((item) => item.open)) {
     document.body.classList.remove('modal-open');
   }
 }
@@ -230,6 +230,24 @@ function renderLivePresence(entries = onlineState.participants) {
   if (liveCopy && onlineState.participants.length) {
     liveCopy.textContent = `${onlineState.participants.length} ${onlineState.participants.length === 1 ? 'giocatore connesso' : 'giocatori connessi'}. La partita partirà automaticamente.`;
   }
+
+  const lobbyStatus = $('.live-lobby-status');
+  if (lobbyStatus) {
+    lobbyStatus.textContent = onlineState.participants.length > 1
+      ? 'AMICO/A CONNESSO/A · PREPARATI!'
+      : state.mode === 'challenge-live-host'
+        ? 'LINK INVIATO · IN ATTESA DELL’AMICO/A'
+        : 'CONNESSIONE ALLA STANZA LIVE…';
+  }
+
+  if (state.mode === 'challenge-live-guest' && !state.startAt) {
+    const sharedStart = onlineState.participants
+      .filter((participant) => Number(participant.roomRound || 1) === state.roomRound)
+      .map((participant) => Number(participant.startAt))
+      .find((startAt) => Number.isFinite(startAt) && startAt > Date.now() - 1000 && startAt < Date.now() + 15000);
+    if (sharedStart) beginInitialLiveCountdown(sharedStart);
+  }
+  if (state.mode === 'challenge-live-host') void maybeScheduleInitialLiveStart();
 
   const panel = $('#live-results-panel');
   panel.hidden = !liveMode || resultScreen.classList.contains('is-active') === false;
@@ -260,6 +278,49 @@ async function trackLiveState(patch) {
   const room = onlineState.room || getRoomConnection();
   if (!room) return;
   try { await room.track(patch); } catch { /* Presence is an enhancement; gameplay continues. */ }
+}
+
+function initialLivePresencePatch() {
+  const waiting = state.round === 0 && state.results.length === 0 && (!state.startAt || state.startAt > Date.now());
+  return {
+    status: waiting ? (state.startAt ? 'countdown' : 'waiting') : 'playing',
+    score: null,
+    grade: null,
+    round: waiting ? 0 : state.round + 1,
+    roomRound: state.roomRound,
+    startAt: waiting ? state.startAt : null,
+  };
+}
+
+function beginInitialLiveCountdown(startAt) {
+  if (!state.mode.startsWith('challenge-live') || state.round !== 0 || state.results.length > 0) return;
+  const safeStartAt = Number(startAt);
+  if (!Number.isFinite(safeStartAt) || safeStartAt < Date.now() - 1000 || safeStartAt > Date.now() + 15000) return;
+  if (state.startAt && state.startAt <= safeStartAt) return;
+  state.startAt = safeStartAt;
+  void trackLiveState(initialLivePresencePatch());
+  renderChallenge();
+}
+
+async function maybeScheduleInitialLiveStart() {
+  if (state.mode !== 'challenge-live-host'
+    || state.round !== 0
+    || state.results.length > 0
+    || state.startAt
+    || onlineState.participants.length < 2
+    || !onlineState.room) return;
+
+  const startAt = Date.now() + 3000;
+  state.startAt = startAt;
+  try {
+    await onlineState.room.track(initialLivePresencePatch());
+    await onlineState.room.send('challenge_start', { startAt, roomRound: state.roomRound });
+    renderChallenge();
+  } catch {
+    state.startAt = null;
+    void trackLiveState(initialLivePresencePatch());
+    showToast('Non riesco ad avviare il countdown. Controlla la connessione.');
+  }
 }
 
 function showRematchDialog(role, proposal) {
@@ -313,6 +374,11 @@ function beginAcceptedRematch(proposal) {
 
 async function handleRealtimeEvent(payload) {
   if (!payload?.type || payload.senderId === onlineState.room?.profile?.userId) return;
+  if (payload.type === 'challenge_start') {
+    if (Number(payload.roomRound || 1) !== state.roomRound) return;
+    beginInitialLiveCountdown(payload.startAt);
+    return;
+  }
   if (payload.type === 'score') {
     if (resultScreen.classList.contains('is-active')) showToast(`${payload.senderName} ha finito: ${payload.score}/100`);
     return;
@@ -362,7 +428,8 @@ async function connectGameRealtime() {
   }
   const roomId = state.roomId;
   if (onlineState.room?.roomId === roomId) {
-    await trackLiveState({ status: 'playing', score: null, grade: null, round: state.round + 1, roomRound: state.roomRound });
+    await trackLiveState(initialLivePresencePatch());
+    renderLivePresence(onlineState.participants);
     return;
   }
   if (onlineState.connectingRoomId === roomId) return;
@@ -372,7 +439,7 @@ async function connectGameRealtime() {
     const room = await connectRealtimeRoom({
       roomId,
       nickname: getPlayerName(),
-      presence: { status: 'playing', round: state.round + 1, roomRound: state.roomRound },
+      presence: initialLivePresencePatch(),
       onPresence: (participants) => {
         if (state.roomId === roomId) renderLivePresence(participants);
       },
@@ -388,6 +455,7 @@ async function connectGameRealtime() {
     }
     onlineState.room = room;
     setOnlineStatus('ONLINE', 'online');
+    renderLivePresence(onlineState.participants);
   } catch (error) {
     console.error('QUASI! Realtime connection failed:', error);
     setOnlineStatus('OFFLINE', 'error');
@@ -709,6 +777,13 @@ function makeCanvas(height = 330, width = 900) {
   return { canvas, ctx: canvas.getContext('2d'), pointFromEvent };
 }
 
+function usesTouchChallengeLayout() {
+  return qaTouchLayout
+    || window.matchMedia?.('(pointer: coarse)').matches === true
+    || navigator.maxTouchPoints > 0
+    || window.innerWidth <= 800;
+}
+
 function challengeResult(score, detail) {
   if (state.locked) return;
   state.locked = true;
@@ -773,6 +848,9 @@ function startGame({
   state.startAt = startAt;
   state.roomId = mode.startsWith('challenge-live') ? (roomId || state.roomId || state.challengeSeed) : null;
   state.roomRound = mode.startsWith('challenge-live') ? Math.max(1, Number(roomRound) || 1) : 1;
+  state.liveInviteUrl = mode.startsWith('challenge-live')
+    ? buildChallengeUrl({ deck: state.deck, seed: state.challengeSeed, live: true })
+    : '';
   state.gameStartedAt = Date.now();
   $('#world-submit-status').hidden = true;
   $('#live-results-panel').hidden = true;
@@ -821,13 +899,7 @@ function renderChallenge() {
   challengeCard.dataset.kind = challenge.kind;
   challengeCard.dataset.variant = challenge.config.mode || challenge.config.shape || challenge.config.path || '';
   if (state.mode.startsWith('challenge-live')) {
-    void trackLiveState({
-      status: 'playing',
-      score: null,
-      grade: null,
-      round: state.round + 1,
-      roomRound: state.roomRound,
-    });
+    void trackLiveState(initialLivePresencePatch());
   }
 
   const renderer = renderers[challenge.kind];
@@ -843,8 +915,46 @@ function renderChallenge() {
     if (startsAutomatically(challenge) && (!qaLevelId || qaCountdown)) renderStartCountdown(launchRenderer);
     else launchRenderer();
   };
-  if (state.round === 0 && state.startAt && state.startAt > Date.now()) renderLiveWaiting(beginChallenge);
+  if (state.round === 0 && state.mode.startsWith('challenge-live') && !state.startAt) renderLiveLobby();
+  else if (state.round === 0 && state.startAt && state.startAt > Date.now()) renderLiveWaiting(beginChallenge);
   else beginChallenge();
+}
+
+function renderLiveLobby() {
+  const isHost = state.mode === 'challenge-live-host';
+  const waiting = document.createElement('div');
+  waiting.className = 'start-countdown live-lobby';
+  waiting.innerHTML = `
+    <div class="countdown-panel">
+      <div class="countdown-copy">
+        <span>SFIDA LIVE</span>
+        <h3>IN ATTESA<br />DELL’AMICO/A.</h3>
+        <p>${isHost
+          ? 'Invia il link e tieni aperta questa pagina. Appena entra, partirà un countdown di 3 secondi.'
+          : 'Sei nella stanza live. Attendiamo il collegamento con chi ti ha invitato.'}</p>
+      </div>
+      <div class="countdown-number-box live-lobby-box" aria-hidden="true">
+        <strong>••</strong>
+        <small>IN ATTESA</small>
+      </div>
+      <div class="live-pulse" aria-hidden="true"><i></i></div>
+      <strong class="live-lobby-status">LINK INVIATO · IN ATTESA DELL’AMICO/A</strong>
+    </div>
+  `;
+  stage.append(waiting);
+
+  if (isHost) {
+    const shareAgain = makeButton('INVIA DI NUOVO IL LINK', 'confirm-button live-share-again');
+    shareAgain.addEventListener('click', async () => {
+      await shareChallengeLink({
+        title: 'Entra nella mia sfida live a QUASI!',
+        text: 'Apri il link: appena entrerai partirà il countdown di 3 secondi.',
+        url: state.liveInviteUrl,
+      }, 'Link copiato: invialo al tuo amico!');
+    });
+    controls.append(shareAgain);
+  }
+  renderLivePresence(onlineState.participants);
 }
 
 function renderLiveWaiting(onReady) {
@@ -855,11 +965,11 @@ function renderLiveWaiting(onReady) {
       <div class="countdown-copy">
         <span>SFIDA LIVE</span>
         <h3>INSIEME.</h3>
-        <p>Tieni aperta questa pagina. La partita partirà automaticamente.</p>
+        <p>Amico/a connesso/a. La partita sta per iniziare per tutti.</p>
       </div>
       <div class="countdown-number-box">
-        <strong class="live-clock">${formatClock(state.startAt - Date.now())}</strong>
-        <small>ALLA PARTENZA</small>
+        <strong class="live-clock">${Math.max(1, Math.ceil((state.startAt - Date.now()) / 1000))}</strong>
+        <small>SECONDI</small>
       </div>
       <div class="live-pulse" aria-hidden="true"><i></i></div>
     </div>
@@ -868,13 +978,15 @@ function renderLiveWaiting(onReady) {
   const interval = setInterval(() => {
     const remaining = state.startAt - Date.now();
     if (remaining > 0) {
-      $('.live-clock', waiting).textContent = formatClock(remaining);
+      $('.live-clock', waiting).textContent = String(Math.max(1, Math.ceil(remaining / 1000)));
       return;
     }
     clearInterval(interval);
     stage.replaceChildren();
     controls.replaceChildren();
     tone(680, .1, 'triangle');
+    state.gameStartedAt = Date.now();
+    void trackLiveState(initialLivePresencePatch());
     onReady();
   }, 100);
   registerCleanup(() => clearInterval(interval));
@@ -940,14 +1052,12 @@ function finishGame() {
     $('#header-best').textContent = String(finalScore);
   }
   const { grade, label } = getGrade(finalScore);
-  $('#compare-button').hidden = true;
   if (state.mode.startsWith('challenge-live')) {
     localStorage.setItem(`quasi-live-result:${state.challengeSeed}`, String(finalScore));
     updateHomeAfterLiveGame(finalScore);
     $('#result-title').innerHTML = 'SFIDA<br><em>COMPLETATA.</em>';
-    $('#result-summary').textContent = `${finalScore}/100 · Grado ${grade}. Condividi il risultato per confrontarlo con gli amici.`;
+    $('#result-summary').textContent = `${finalScore}/100 · Grado ${grade}. I risultati degli amici appariranno qui in tempo reale.`;
     $('#share-button span').textContent = 'CONDIVIDI RISULTATO';
-    $('#compare-button').hidden = false;
   } else if (state.mode === 'challenge-guest') {
     const difference = finalScore - state.opponentScore;
     if (difference > 0) {
@@ -1484,21 +1594,34 @@ function drawTracePath(ctx, points, width) {
 }
 
 function renderTrace(config) {
-  const {canvas,ctx,pointFromEvent}=makeCanvas();const path=pathFor(config.path);const samples=[];let drawing=false;let trail=[];
-  const draw=()=>{drawTracePath(ctx,path,config.width);if(config.path==='gates'){ctx.strokeStyle='#7558ff';ctx.lineWidth=7;[32,68,104,136].forEach(i=>{ctx.beginPath();ctx.arc(path[i].x,path[i].y,config.width*.55,0,Math.PI*2);ctx.stroke();});}if(trail.length){ctx.strokeStyle='#ff5b3d';ctx.lineWidth=7;ctx.beginPath();trail.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();}};draw();
-  const start=(event)=>{const p=pointFromEvent(event);if(distance(p,path[0])>config.width*1.4)return;drawing=true;trail=[p];samples.length=0;canvas.setPointerCapture(event.pointerId);};
+  const touchLayout=usesTouchChallengeLayout();
+  const {canvas,ctx,pointFromEvent}=touchLayout?makeCanvas(500,700):makeCanvas();
+  const scaleX=canvas.width/900;
+  const offsetY=(canvas.height-330)/2;
+  const path=pathFor(config.path).map((point)=>({x:point.x*scaleX,y:point.y+offsetY}));
+  const pathWidth=touchLayout?Math.max(76,config.width*1.7):config.width;
+  const samples=[];let drawing=false;let trail=[];
+  const draw=()=>{drawTracePath(ctx,path,pathWidth);if(config.path==='gates'){ctx.strokeStyle='#7558ff';ctx.lineWidth=touchLayout?10:7;[32,68,104,136].forEach(i=>{ctx.beginPath();ctx.arc(path[i].x,path[i].y,pathWidth*.55,0,Math.PI*2);ctx.stroke();});}if(trail.length){ctx.strokeStyle='#ff5b3d';ctx.lineWidth=touchLayout?12:7;ctx.beginPath();trail.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();}};draw();
+  const start=(event)=>{const p=pointFromEvent(event);if(distance(p,path[0])>pathWidth*1.4)return;drawing=true;trail=[p];samples.length=0;canvas.setPointerCapture(event.pointerId);};
   const move=(event)=>{if(!drawing)return;const p=pointFromEvent(event);trail.push(p);const nearest=Math.min(...path.filter((_,i)=>i%3===0).map(g=>distance(p,g)));samples.push(nearest);draw();};
-  const end=()=>{if(!drawing)return;drawing=false;const progress=trail.length?1-distance(trail.at(-1),path.at(-1))/Math.max(500,distance(path[0],path.at(-1))):0;const outside=samples.filter(d=>d>config.width/2).length/Math.max(samples.length,1);const avg=mean(samples);const score=accuracy(avg,config.width*.7)*.65+clamp(progress,0,1)*25+(1-outside)*10;challengeResult(score,`Fuori dal percorso per il ${(outside*100).toFixed(1)}% del tragitto.`);};
+  const end=()=>{if(!drawing)return;drawing=false;const progress=trail.length?1-distance(trail.at(-1),path.at(-1))/Math.max(canvas.width*.55,distance(path[0],path.at(-1))):0;const outside=samples.filter(d=>d>pathWidth/2).length/Math.max(samples.length,1);const avg=mean(samples);const score=accuracy(avg,pathWidth*.7)*.65+clamp(progress,0,1)*25+(1-outside)*10;challengeResult(score,`Fuori dal percorso per il ${(outside*100).toFixed(1)}% del tragitto.`);};
   canvas.addEventListener('pointerdown',start);canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
   const note=document.createElement('p');note.className='stage-note';note.textContent='PARTI DAL PUNTO ARANCIONE E RAGGIUNGI QUELLO VERDE';stage.append(note);
 }
 
 function renderSteady(config) {
-  const {canvas,ctx,pointFromEvent}=makeCanvas();let pointer={x:-100,y:-100};let holding=false;let start=0;let raf;const samples=[];
-  const radius=config.radius || 43;const amplitudeX=config.amplitudeX || 260;const speedY=config.speedY || 3.1;
-  const targetAt=(now)=>{const t=(now-start)/1000;return{x:450+Math.sin(t*2.2)*amplitudeX,y:165+Math.sin(t*speedY)*92};};
-  const draw=(now=performance.now())=>{ctx.clearRect(0,0,900,330);const target=targetAt(now);ctx.fillStyle='#26c9a7';ctx.beginPath();ctx.arc(target.x,target.y,radius,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#171513';ctx.lineWidth=4;ctx.stroke();ctx.fillStyle='#ff5b3d';ctx.beginPath();ctx.arc(pointer.x,pointer.y,8,0,Math.PI*2);ctx.fill();if(holding){samples.push(distance(pointer,target));if(now-start>=config.duration){holding=false;const inside=samples.filter(d=>d<=radius).length/samples.length;challengeResult(inside*100,`Sei rimasto nel bersaglio per il ${(inside*100).toFixed(1)}% del tempo.`);return;}}raf=requestAnimationFrame(draw);};
-  canvas.addEventListener('pointerdown',(event)=>{if(holding)return;pointer=pointFromEvent(event);holding=true;start=performance.now();samples.length=0;canvas.setPointerCapture(event.pointerId);});
+  const touchLayout=usesTouchChallengeLayout();
+  const {canvas,ctx,pointFromEvent}=touchLayout?makeCanvas(500,700):makeCanvas();
+  let pointer={x:-100,y:-100};let holding=false;let holdStartedAt=0;let raf;const samples=[];
+  const baseRadius=config.radius || 43;
+  const radius=touchLayout?Math.max(54,baseRadius*1.45):baseRadius;
+  const amplitudeX=(config.amplitudeX || 260)*(canvas.width/900);
+  const amplitudeY=touchLayout?Math.min(120,canvas.height*.24):92;
+  const speedY=config.speedY || 3.1;
+  const motionStartedAt=performance.now();
+  const targetAt=(now)=>{const t=(now-motionStartedAt)/1000;return{x:canvas.width/2+Math.sin(t*2.2)*amplitudeX,y:canvas.height/2+Math.sin(t*speedY)*amplitudeY};};
+  const draw=(now=performance.now())=>{ctx.clearRect(0,0,canvas.width,canvas.height);const target=targetAt(now);ctx.fillStyle='#26c9a7';ctx.beginPath();ctx.arc(target.x,target.y,radius,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#171513';ctx.lineWidth=touchLayout?6:4;ctx.stroke();ctx.fillStyle='#ff5b3d';ctx.beginPath();ctx.arc(pointer.x,pointer.y,touchLayout?16:8,0,Math.PI*2);ctx.fill();if(holding){samples.push(distance(pointer,target));if(now-holdStartedAt>=config.duration){holding=false;const inside=samples.filter(d=>d<=radius).length/samples.length;challengeResult(inside*100,`Sei rimasto nel bersaglio per il ${(inside*100).toFixed(1)}% del tempo.`);return;}}raf=requestAnimationFrame(draw);};
+  canvas.addEventListener('pointerdown',(event)=>{if(holding)return;pointer=pointFromEvent(event);holding=true;holdStartedAt=performance.now();samples.length=0;canvas.setPointerCapture(event.pointerId);});
   canvas.addEventListener('pointermove',(event)=>{pointer=pointFromEvent(event);});
   const release=()=>{if(holding){holding=false;challengeResult(mean(samples.map(d=>d<=radius?1:0))*70,`Hai rilasciato prima della fine.`);}};
   canvas.addEventListener('pointerup',release);canvas.addEventListener('pointercancel',release);
@@ -1673,7 +1796,7 @@ async function resultBlob() {
   return new Promise((resolve)=>$('#result-canvas').toBlob(resolve,'image/png',1));
 }
 
-function buildChallengeUrl({ deck, seed, score = null, startAt = null }) {
+function buildChallengeUrl({ deck, seed, score = null, startAt = null, live = false }) {
   // Ricava sempre la root reale dell'app dal modulo stesso: funziona sia su
   // un sito utente sia dentro la sottocartella di un progetto GitHub Pages.
   const url = new URL('../', import.meta.url);
@@ -1685,6 +1808,7 @@ function buildChallengeUrl({ deck, seed, score = null, startAt = null }) {
     seed,
     score,
     startAt,
+    live,
   }));
   // Il frammento non viene inviato al server: GitHub Pages riceve sempre la
   // root esistente e non può mostrare una 404 prima dell'avvio dell'app.
@@ -1769,55 +1893,32 @@ async function shareChallengeLink(shareData, copiedMessage) {
   return true;
 }
 
-async function compareFriendResult() {
-  const input = $('#compare-input');
-  let value = input.value.trim();
-  if (!value && navigator.clipboard?.readText) {
-    try { value = (await navigator.clipboard.readText()).trim(); input.value = value; } catch { /* Manual paste remains available. */ }
-  }
-  const output = $('#compare-output');
-  try {
-    const url = new URL(value);
-    const payload = decodeChallenge(challengeCodeFromUrl(url), new Set(challengeCatalog.keys()));
-    if (!payload || payload.score === null) throw new Error('missing-result');
-    if (payload.seed !== state.challengeSeed) throw new Error('different-match');
-    const ownScore = Math.round(mean(state.results.map((result) => result.score)));
-    const difference = ownScore - payload.score;
-    output.className = `compare-output ${difference > 0 ? 'is-win' : difference < 0 ? 'is-loss' : 'is-draw'}`;
-    output.innerHTML = `<strong>${difference > 0 ? `HAI VINTO DI ${difference}` : difference < 0 ? `HAI PERSO DI ${Math.abs(difference)}` : 'PARITÀ PERFETTA'}</strong><span>TU ${ownScore} · AMICO ${payload.score}</span>`;
-    output.hidden = false;
-  } catch (error) {
-    output.className = 'compare-output is-error';
-    output.innerHTML = `<strong>LINK NON VALIDO</strong><span>${error.message === 'different-match' ? 'Questo risultato appartiene a un’altra sfida.' : 'Incolla il link risultato condiviso dal tuo amico.'}</span>`;
-    output.hidden = false;
-  }
-}
-
 async function launchLiveChallenge() {
+  if (!isSupabaseConfigured()) {
+    showToast('La sfida live non è disponibile in questo momento. Riprova tra poco.');
+    return;
+  }
   const recentKinds = storedList('quasi-recent-kinds');
   const recentIds = storedList('quasi-recent-levels');
   const deck = buildDeck(10, { excludedKinds: recentKinds, excludedIds: recentIds });
   const seed = createChallengeSeed();
-  const startAt = Date.now() + 60_000;
-  if (isSupabaseConfigured()) {
-    setOnlineStatus('CONNESSIONE');
-    try {
-      await ensureOnlineProfile(getPlayerName());
-      setOnlineStatus('ONLINE', 'online');
-    } catch {
-      setOnlineStatus('OFFLINE', 'error');
-      showToast('Servizio online non disponibile. Riprova tra poco.');
-      return;
-    }
+  setOnlineStatus('CONNESSIONE');
+  try {
+    await ensureOnlineProfile(getPlayerName());
+    setOnlineStatus('ONLINE', 'online');
+  } catch {
+    setOnlineStatus('OFFLINE', 'error');
+    showToast('Servizio online non disponibile. Riprova tra poco.');
+    return;
   }
-  const url = buildChallengeUrl({ deck, seed, startAt });
+  const url = buildChallengeUrl({ deck, seed, live: true });
   const shareData = {
     title: 'Entra nella mia sfida live a QUASI!',
-    text: 'Apri il link: affronteremo insieme gli stessi 10 livelli, con partenza sincronizzata.',
+    text: 'Apri il link: appena entrerai partirà il countdown di 3 secondi e giocheremo insieme.',
     url,
   };
   if (!await shareChallengeLink(shareData, 'Link copiato: invialo subito al tuo amico!')) return;
-  startGame({ mode: 'challenge-live-host', deck, seed, startAt, roomId: seed, roomRound: 1 });
+  startGame({ mode: 'challenge-live-host', deck, seed, startAt: null, roomId: seed, roomRound: 1 });
 }
 
 async function shareResult() {
@@ -2000,7 +2101,7 @@ $('#challenge-button').addEventListener('click',()=>{
   if (incomingChallenge) {
     const hasLocalResult = localStorage.getItem(`quasi-live-result:${incomingChallenge.seed}`) !== null;
     if (hasLocalResult) { launchLiveChallenge(); return; }
-    const live = incomingChallenge.score === null && incomingChallenge.startAt;
+    const live = incomingChallenge.score === null && incomingChallenge.live;
     startGame({
       mode: live ? 'challenge-live-guest' : 'challenge-guest',
       deck: incomingChallenge.deck.map((id) => challengeCatalog.get(id)),
@@ -2032,9 +2133,6 @@ addReliableTouchActivation($('#next-button'), () => {
 addReliableTouchActivation($('#training-back-button'), returnToTrainingCatalog);
 addReliableTouchActivation($('#level-leaderboard-button'), () => void openLevelLeaderboard(state.deck[0]));
 $('#share-button').addEventListener('click',shareResult);
-$('#compare-button').addEventListener('click',()=>{$('#compare-output').hidden=true;$('#compare-input').value='';openManagedDialog(compareDialog);$('#compare-input').focus();});
-$('#compare-submit').addEventListener('click',compareFriendResult);
-$('#compare-input').addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();compareFriendResult();}});
 $('#download-button').addEventListener('click',downloadResult);
 $('#leaderboard-button').addEventListener('click', () => void openLeaderboard('all'));
 $('#online-status').addEventListener('click', () => void openLeaderboard(onlineState.leaderboardPeriod));
@@ -2062,9 +2160,9 @@ $$('[data-go-home]').forEach((button) => {
   else button.addEventListener('click', returnHome);
 });
 
-[leaderboardDialog, levelLeaderboardDialog, bestScoreDialog, profileDialog, rematchDialog, howDialog, compareDialog].forEach((dialog) => {
+[leaderboardDialog, levelLeaderboardDialog, bestScoreDialog, profileDialog, rematchDialog, howDialog].forEach((dialog) => {
   dialog.addEventListener('close', () => {
-    if (![leaderboardDialog, levelLeaderboardDialog, bestScoreDialog, profileDialog, rematchDialog, trainingDialog, howDialog, compareDialog].some((item) => item.open)) {
+    if (![leaderboardDialog, levelLeaderboardDialog, bestScoreDialog, profileDialog, rematchDialog, trainingDialog, howDialog].some((item) => item.open)) {
       document.body.classList.remove('modal-open');
     }
   });

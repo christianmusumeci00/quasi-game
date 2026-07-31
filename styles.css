@@ -279,12 +279,18 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
 .countdown-steps i.is-done { background: var(--orange); }
 .live-start .countdown-number-box { width: 185px; background: var(--ink); }
 .live-start .live-clock { color: var(--yellow); font-size: 3.25rem; line-height: 1; letter-spacing: -.06em; font-variant-numeric: tabular-nums; }
+.live-lobby .countdown-panel { grid-template-columns: minmax(0,1fr) 145px; }
+.live-lobby-box { width: 145px; background: var(--violet); }
+.live-lobby-box strong { color: white; font-size: 4rem; letter-spacing: .04em; animation: lobby-dots 1.15s ease-in-out infinite alternate; }
+.live-lobby-status { grid-column: 1 / -1; color: rgba(23,21,19,.58); text-align: center; font-size: .6rem; letter-spacing: .1em; }
+.live-share-again { min-width: min(280px,100%); background: var(--yellow); color: var(--ink); }
 .live-pulse { grid-column: 1 / -1; height: 7px; overflow: hidden; border-radius: 99px; background: var(--paper-2); }
 .live-pulse i { display: block; width: 34%; height: 100%; border-radius: inherit; background: var(--mint); animation: live-pulse 1.6s ease-in-out infinite alternate; }
 .countdown-hint { margin: 0; color: rgba(23,21,19,.55); font-size: .67rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 @keyframes countdown-in { from { opacity: 0; transform: translateY(8px); } }
 @keyframes countdown-tick { from { opacity: .15; transform: translateY(-10px) scale(.9); } }
 @keyframes live-pulse { to { transform: translateX(194%); } }
+@keyframes lobby-dots { from { opacity: .35; transform: translateY(-3px); } to { opacity: 1; transform: translateY(3px); } }
 
 .big-action { width: min(360px, 90%); min-height: 78px; border: 2px solid var(--ink); border-radius: 18px; background: var(--challenge-color, var(--orange)); box-shadow: 0 5px 0 var(--ink); cursor: pointer; font-size: 1rem; font-weight: 1000; letter-spacing: .08em; touch-action: none; }
 .big-action:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--ink); }
@@ -469,18 +475,6 @@ dialog li::before { content: '0' counter(rules); grid-row: 1 / 3; color: var(--o
 dialog li b { font-size: .9rem; }
 dialog li span { color: rgba(23,21,19,.65); line-height: 1.4; font-size: .86rem; }
 .dialog-start { width: 100%; }
-
-.compare-dialog > p:not(.eyebrow) { margin: -8px 0 20px; color: rgba(23,21,19,.65); font-weight: 650; line-height: 1.45; }
-.compare-input { width: 100%; height: 55px; margin-bottom: 15px; padding: 0 15px; border: 2px solid var(--ink); border-radius: 12px; background: white; color: var(--ink); user-select: text; -webkit-user-select: text; }
-.compare-input:focus { outline: 0; box-shadow: inset 0 0 0 2px var(--yellow); }
-.compare-submit { width: 100%; }
-.compare-output { margin-top: 20px; padding: 17px; border: 2px solid var(--ink); border-radius: 14px; background: var(--yellow); text-align: center; }
-.compare-output[hidden] { display: none; }
-.compare-output strong, .compare-output span { display: block; }
-.compare-output strong { font-size: 1.2rem; letter-spacing: -.03em; }
-.compare-output span { margin-top: 4px; font-size: .75rem; font-weight: 850; letter-spacing: .08em; }
-.compare-output.is-win { background: var(--mint); }
-.compare-output.is-loss, .compare-output.is-error { background: color-mix(in srgb, var(--orange) 70%, white); }
 
 .leaderboard-dialog { width: min(720px, calc(100% - 24px)); max-height: calc(var(--app-height) - 24px); overflow: hidden; }
 .leaderboard-tabs { display: flex; gap: 7px; margin: -6px 0 17px; overflow-x: auto; scrollbar-width: none; }
@@ -870,6 +864,12 @@ dialog li span { color: rgba(23,21,19,.65); line-height: 1.4; font-size: .86rem;
   .countdown-number-box small { margin-top: 10px; font-size: .45rem; }
   .live-start .countdown-number-box { width: 112px; }
   .live-start .live-clock { font-size: 2.15rem; }
+  .live-lobby .countdown-panel { grid-template-columns: minmax(0,1fr) 82px; gap: 13px; padding: 16px; }
+  .live-lobby .countdown-copy h3 { font-size: clamp(1.45rem, 7vw, 2rem); }
+  .live-lobby .countdown-copy p { font-size: .68rem; }
+  .live-lobby-box { width: 82px; height: 105px; }
+  .live-lobby-box strong { font-size: 2.6rem; }
+  .live-lobby-status { font-size: .5rem; line-height: 1.3; }
   .timer-display { font-size: 4.4rem; }
   .game-topbar { padding-right: 5px; }
   .feedback-card { padding: 30px 20px; }

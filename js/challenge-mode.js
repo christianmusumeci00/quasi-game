@@ -9,8 +9,8 @@ export function createChallengeSeed() {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
 }
 
-export function encodeChallenge({ deck, seed, score = null, startAt = null }) {
-  const payload = JSON.stringify({ v: 1, d: deck, r: seed, s: score, t: startAt });
+export function encodeChallenge({ deck, seed, score = null, startAt = null, live = false }) {
+  const payload = JSON.stringify({ v: 1, d: deck, r: seed, s: score, t: startAt, l: Boolean(live) });
   return btoa(payload).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 }
 
@@ -22,13 +22,17 @@ export function decodeChallenge(code, validIds) {
     const hasScore = payload.s !== null && payload.s !== undefined && payload.s !== '';
     const score = hasScore ? Number(payload.s) : null;
     const startAt = payload.t === null || payload.t === undefined ? null : Number(payload.t);
+    // I vecchi inviti live contenevano soltanto l'orario di partenza; restano
+    // validi mentre i nuovi link usano un indicatore esplicito e attendono la
+    // presenza realtime dell'altro giocatore.
+    const live = payload.l === true || (!hasScore && startAt !== null);
     const seed = String(payload.r || '');
     if (payload.v !== 1 || deck.length !== 10 || new Set(deck).size !== 10) return null;
     if (deck.some((id) => !validIds.has(id)) || !seed || seed.length > 80) return null;
     if (hasScore && (!Number.isFinite(score) || score < 0 || score > 100)) return null;
     if (startAt !== null && (!Number.isFinite(startAt) || startAt <= 0)) return null;
-    if (!hasScore && startAt === null) return null;
-    return { deck, seed, score: hasScore ? Math.round(score) : null, startAt };
+    if (!hasScore && !live) return null;
+    return { deck, seed, score: hasScore ? Math.round(score) : null, startAt, live };
   } catch {
     return null;
   }
