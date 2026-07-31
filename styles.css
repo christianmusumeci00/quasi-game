@@ -126,6 +126,8 @@ button:focus-visible, [tabindex]:focus-visible { outline: 4px solid var(--violet
   font-size: .7rem;
   letter-spacing: .13em;
   font-weight: 900;
+  appearance: none;
+  cursor: pointer;
 }
 
 .best-pill strong { color: var(--orange); font-size: 1.15rem; letter-spacing: -.04em; }
@@ -512,6 +514,14 @@ dialog li span { color: rgba(23,21,19,.65); line-height: 1.4; font-size: .86rem;
 .leaderboard-note { margin: 15px 0 0; color: rgba(23,21,19,.52); font-size: .6rem; font-weight: 700; line-height: 1.4; }
 .level-leaderboard-name { margin: -8px 0 17px; color: var(--orange); font-size: .78rem; font-weight: 1000; letter-spacing: .08em; text-transform: uppercase; }
 
+.best-score-dialog > p:not(.eyebrow) { color: rgba(23,21,19,.65); font-weight: 650; line-height: 1.5; }
+.best-score-explanation { margin: 22px 0 16px; padding: 17px 18px; border: 2px solid var(--ink); border-radius: 16px; background: var(--yellow); box-shadow: 4px 4px 0 var(--ink); }
+.best-score-explanation strong, .best-score-explanation span { display: block; }
+.best-score-explanation strong { margin-bottom: 5px; font-size: .78rem; letter-spacing: .1em; }
+.best-score-explanation span { color: rgba(23,21,19,.68); font-size: .78rem; font-weight: 750; line-height: 1.45; }
+.best-score-dialog .best-score-note { margin-bottom: 23px; font-size: .72rem; }
+.best-score-dialog .dialog-close-action { width: 100%; }
+
 .profile-dialog > p:not(.eyebrow), .rematch-dialog > p:not(.eyebrow) { color: rgba(23,21,19,.65); font-weight: 650; line-height: 1.45; }
 .profile-label { display: block; margin: 22px 0 7px; font-size: .58rem; font-weight: 1000; letter-spacing: .1em; }
 .profile-input { width: 100%; height: 56px; padding: 0 15px; border: 2px solid var(--ink); border-radius: 13px; background: white; user-select: text; -webkit-user-select: text; font-size: 16px; font-weight: 850; }
@@ -813,9 +823,33 @@ dialog li span { color: rgba(23,21,19,.65); line-height: 1.4; font-size: .86rem;
   .home-screen { padding-top: 34px; gap: 34px; }
   .hero-copy h1 { font-size: clamp(3.8rem, 19vw, 5.3rem); }
   .hero-intro { margin: 25px auto; font-size: .98rem; }
-  .hero-actions { flex-direction: column; }
+  .hero-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 12px; }
+  .hero-actions > .primary-button,
+  .hero-actions > .challenge-mode-button,
+  .hero-actions > .training-mode-button,
+  .hero-actions > .leaderboard-mode-button {
+    width: 100%;
+    min-width: 0;
+    min-height: 88px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 7px;
+    padding: 12px;
+    text-align: left;
+    font-size: clamp(.58rem, 2.8vw, .68rem);
+    line-height: 1.18;
+  }
+  .hero-actions > .primary-button span,
+  .hero-actions > .challenge-mode-button span,
+  .hero-actions > .training-mode-button span,
+  .hero-actions > .leaderboard-mode-button span { min-width: 0; overflow-wrap: anywhere; }
+  .hero-actions > .primary-button b,
+  .hero-actions > .challenge-mode-button b,
+  .hero-actions > .training-mode-button b,
+  .hero-actions > .leaderboard-mode-button b { justify-self: end; }
   .primary-button { min-width: min(270px, 100%); }
-  .hero-text-action { gap: 4px 14px; flex-wrap: wrap; justify-content: center; }
+  .hero-text-action { grid-column: 1 / -1; gap: 4px 14px; flex-wrap: wrap; justify-content: center; }
   .hero-art { max-width: 350px; }
   .hero-sticker { width: 86px; font-size: .55rem; }
   .home-footer { margin-inline: -11px; }
@@ -869,6 +903,14 @@ dialog li span { color: rgba(23,21,19,.65); line-height: 1.4; font-size: .86rem;
   .leaderboard-dialog { padding: 30px 15px 22px; }
   .leaderboard-dialog h2 { font-size: 2.2rem; }
   .leaderboard-row { grid-template-columns: 34px minmax(0,1fr) 47px; padding-inline: 4px; }
+  .best-score-dialog { max-height: calc(100dvh - 24px); padding: 24px 18px; }
+  .best-score-dialog .eyebrow { margin-bottom: 12px; }
+  .best-score-dialog h2 { margin-bottom: 14px; font-size: 1.95rem; }
+  .best-score-dialog > p:not(.eyebrow) { font-size: .76rem; line-height: 1.38; }
+  .best-score-explanation { margin: 12px 0; padding: 11px 13px; }
+  .best-score-explanation span { font-size: .7rem; line-height: 1.35; }
+  .best-score-dialog .best-score-note { margin-bottom: 13px; font-size: .64rem; }
+  .best-score-dialog .dialog-close-action { min-height: 50px; }
   .rematch-dialog { padding: 34px 18px; }
   .rematch-actions { grid-template-columns: 1fr; }
 }

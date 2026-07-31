@@ -46,6 +46,7 @@ const trainingDialog = $('#training-dialog');
 const trainingSearch = $('#training-search');
 const leaderboardDialog = $('#leaderboard-dialog');
 const levelLeaderboardDialog = $('#level-leaderboard-dialog');
+const bestScoreDialog = $('#best-score-dialog');
 const profileDialog = $('#profile-dialog');
 const rematchDialog = $('#rematch-dialog');
 let trainingFamily = 'Tutte';
@@ -201,7 +202,7 @@ function openManagedDialog(dialog) {
 
 function closeManagedDialog(dialog) {
   if (dialog.open) dialog.close();
-  if (![leaderboardDialog, levelLeaderboardDialog, profileDialog, rematchDialog, trainingDialog, howDialog, compareDialog].some((item) => item.open)) {
+  if (![leaderboardDialog, levelLeaderboardDialog, bestScoreDialog, profileDialog, rematchDialog, trainingDialog, howDialog, compareDialog].some((item) => item.open)) {
     document.body.classList.remove('modal-open');
   }
 }
@@ -737,7 +738,11 @@ function challengeResult(score, detail) {
     $('#training-home-button').hidden = true;
   }
   feedbackLayer.hidden = false;
-  $('#next-button').focus();
+  if (window.matchMedia?.('(pointer: fine)').matches) {
+    $('#next-button').focus({ preventScroll: true });
+  } else if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
 }
 
 function scoreMessage(score) {
@@ -1922,6 +1927,53 @@ function returnToTrainingCatalog() {
   openTrainingDialog();
 }
 
+function addReliableTouchActivation(button, handler) {
+  let activePointerId = null;
+  let lastTouchActivationAt = -Infinity;
+
+  button.addEventListener('pointerdown', (event) => {
+    if (!['touch', 'pen'].includes(event.pointerType) || event.button !== 0) return;
+    activePointerId = event.pointerId;
+    try { button.setPointerCapture(event.pointerId); } catch { /* Pointer capture is an enhancement. */ }
+  });
+
+  button.addEventListener('pointercancel', () => { activePointerId = null; });
+  button.addEventListener('pointerup', (event) => {
+    if (event.pointerId !== activePointerId) return;
+    activePointerId = null;
+    const releasedOnButton = document.elementFromPoint(event.clientX, event.clientY)?.closest('button') === button;
+    if (!releasedOnButton) return;
+    event.preventDefault();
+    lastTouchActivationAt = performance.now();
+    handler(event);
+  });
+
+  button.addEventListener('click', (event) => {
+    if (event.isTrusted && performance.now() - lastTouchActivationAt < 800) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    handler(event);
+  });
+}
+
+function returnHome() {
+  clearChallenge();
+  feedbackLayer.hidden = true;
+  clearInterval(onlineState.rematchTimer);
+  onlineState.room = null;
+  onlineState.participants = [];
+  onlineState.pendingRematch = null;
+  onlineState.ownRematch = null;
+  onlineState.acceptedRematch = null;
+  void disconnectRealtimeRoom();
+  $('#live-room-pill').hidden = true;
+  $('#live-results-panel').hidden = true;
+  setOnlineStatus(isSupabaseConfigured() ? 'PRONTO' : 'LOCALE', isSupabaseConfigured() ? 'online' : '');
+  showScreen(homeScreen);
+}
+
 $('#start-button').addEventListener('click',()=>startGame({mode:'solo'}));
 $('#training-button').addEventListener('click', openTrainingDialog);
 trainingSearch.addEventListener('input', renderTrainingCatalog);
@@ -1969,15 +2021,16 @@ $('#restart-button').addEventListener('click',()=>{
 });
 $('#how-button').addEventListener('click',()=>openManagedDialog(howDialog));
 $$('.dialog-close').forEach((button)=>button.addEventListener('click',()=>closeManagedDialog(button.closest('dialog'))));
-$('#next-button').addEventListener('click',()=>{
+$('.dialog-close-action', bestScoreDialog).addEventListener('click', () => closeManagedDialog(bestScoreDialog));
+addReliableTouchActivation($('#next-button'), () => {
   feedbackLayer.hidden = true;
   if (state.mode === 'training') {
     startTrainingLevel(state.deck[0]);
   } else if (state.round === 9) finishGame();
   else { state.round += 1; renderChallenge(); }
 });
-$('#training-back-button').addEventListener('click', returnToTrainingCatalog);
-$('#level-leaderboard-button').addEventListener('click', () => void openLevelLeaderboard(state.deck[0]));
+addReliableTouchActivation($('#training-back-button'), returnToTrainingCatalog);
+addReliableTouchActivation($('#level-leaderboard-button'), () => void openLevelLeaderboard(state.deck[0]));
 $('#share-button').addEventListener('click',shareResult);
 $('#compare-button').addEventListener('click',()=>{$('#compare-output').hidden=true;$('#compare-input').value='';openManagedDialog(compareDialog);$('#compare-input').focus();});
 $('#compare-submit').addEventListener('click',compareFriendResult);
@@ -1985,6 +2038,7 @@ $('#compare-input').addEventListener('keydown',(event)=>{if(event.key==='Enter')
 $('#download-button').addEventListener('click',downloadResult);
 $('#leaderboard-button').addEventListener('click', () => void openLeaderboard('all'));
 $('#online-status').addEventListener('click', () => void openLeaderboard(onlineState.leaderboardPeriod));
+$('#best-score-button').addEventListener('click', () => openManagedDialog(bestScoreDialog));
 $('#leaderboard-tabs').addEventListener('click', (event) => {
   const button = event.target.closest('[data-period]');
   if (button) void openLeaderboard(button.dataset.period);
@@ -2003,25 +2057,14 @@ $('#rematch-decline').addEventListener('click', () => {
   closeManagedDialog(rematchDialog);
 });
 $('#sound-toggle').addEventListener('click',()=>{state.sound=!state.sound;localStorage.setItem('quasi-sound',state.sound?'on':'off');$('#sound-toggle').setAttribute('aria-pressed',String(state.sound));$('#sound-toggle').setAttribute('aria-label',state.sound?'Disattiva suoni':'Attiva suoni');if(state.sound)tone(600);});
-$$('[data-go-home]').forEach(button=>button.addEventListener('click',()=>{
-  clearChallenge();
-  feedbackLayer.hidden=true;
-  clearInterval(onlineState.rematchTimer);
-  onlineState.room=null;
-  onlineState.participants=[];
-  onlineState.pendingRematch=null;
-  onlineState.ownRematch=null;
-  onlineState.acceptedRematch=null;
-  void disconnectRealtimeRoom();
-  $('#live-room-pill').hidden=true;
-  $('#live-results-panel').hidden=true;
-  setOnlineStatus(isSupabaseConfigured()?'PRONTO':'LOCALE',isSupabaseConfigured()?'online':'');
-  showScreen(homeScreen);
-}));
+$$('[data-go-home]').forEach((button) => {
+  if (button.closest('.feedback-layer')) addReliableTouchActivation(button, returnHome);
+  else button.addEventListener('click', returnHome);
+});
 
-[leaderboardDialog, levelLeaderboardDialog, profileDialog, rematchDialog, howDialog, compareDialog].forEach((dialog) => {
+[leaderboardDialog, levelLeaderboardDialog, bestScoreDialog, profileDialog, rematchDialog, howDialog, compareDialog].forEach((dialog) => {
   dialog.addEventListener('close', () => {
-    if (![leaderboardDialog, levelLeaderboardDialog, profileDialog, rematchDialog, trainingDialog, howDialog, compareDialog].some((item) => item.open)) {
+    if (![leaderboardDialog, levelLeaderboardDialog, bestScoreDialog, profileDialog, rematchDialog, trainingDialog, howDialog, compareDialog].some((item) => item.open)) {
       document.body.classList.remove('modal-open');
     }
   });

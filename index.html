@@ -13,7 +13,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png" />
     <link rel="manifest" href="site.webmanifest" />
-    <link rel="stylesheet" href="styles.css?v=20260730.32" />
+    <link rel="stylesheet" href="styles.css?v=20260731.2" />
   </head>
   <body>
     <div class="noise" aria-hidden="true"></div>
@@ -26,9 +26,9 @@
         <button class="cloud-pill" id="online-status" type="button" aria-label="Apri la classifica mondiale">
           <i aria-hidden="true"></i><span>CLASSIFICA</span>
         </button>
-        <div class="best-pill" aria-label="Miglior punteggio">
+        <button class="best-pill" id="best-score-button" type="button" aria-label="Che cos’è il miglior punteggio?">
           <span>BEST</span><strong id="header-best">—</strong>
-        </div>
+        </button>
         <button class="icon-button" id="sound-toggle" type="button" aria-label="Disattiva suoni" aria-pressed="true">
           <span class="sound-on" aria-hidden="true">♪</span>
           <span class="sound-off" aria-hidden="true">×</span>
@@ -186,6 +186,19 @@
       <p class="leaderboard-note">I record provengono da partite complete da 10 livelli. I punteggi sospetti possono essere rimossi.</p>
     </dialog>
 
+    <dialog class="best-score-dialog" id="best-score-dialog">
+      <button class="dialog-close" type="button" aria-label="Chiudi">×</button>
+      <p class="eyebrow"><span></span> IL TUO RECORD</p>
+      <h2>CHE COS’È<br />IL BEST?</h2>
+      <p>È il tuo miglior punteggio finale ottenuto su questo dispositivo in una partita completa da 10 prove.</p>
+      <div class="best-score-explanation">
+        <strong>10 RISULTATI</strong>
+        <span>La media delle dieci sfide viene arrotondata e trasformata in un punteggio da 0 a 100.</span>
+      </div>
+      <p class="best-score-note">I record dei singoli livelli in Allenamento e la posizione nella classifica mondiale sono separati.</p>
+      <button class="primary-button dialog-close-action" type="button"><span>HO CAPITO</span><b aria-hidden="true">✓</b></button>
+    </dialog>
+
     <dialog class="profile-dialog" id="profile-dialog">
       <button class="dialog-close" type="button" aria-label="Chiudi">×</button>
       <p class="eyebrow"><span></span> IDENTITÀ DI GIOCO</p>
@@ -254,6 +267,6 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <noscript>QUASI! richiede JavaScript per funzionare.</noscript>
-    <script type="module" src="js/app.js?v=20260730.31"></script>
+    <script type="module" src="js/app.js?v=20260731.2"></script>
   </body>
 </html>
