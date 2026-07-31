@@ -4,16 +4,18 @@ import {
   connectRealtimeRoom,
   disconnectRealtimeRoom,
   ensureOnlineProfile,
+  fetchLiveRoomResults,
   fetchLevelLeaderboard,
   fetchWorldLeaderboard,
   getPlayerName,
   getRoomConnection,
   isSupabaseConfigured,
   savePlayerName,
+  saveLiveRoomResult,
   submitLevelScore,
   submitWorldScore,
   validatePlayerName,
-} from './online.js?v=20260731.1';
+} from './online.js?v=20260731.2';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -31,6 +33,7 @@ const qaResultMode = isLocalQa && pageParams.has('qa-result');
 const qaLiveLobbyMode = isLocalQa && pageParams.has('qa-live-lobby');
 const qaLiveResultsMode = isLocalQa && pageParams.has('qa-live-results');
 const qaAllReady = qaLiveLobbyMode && pageParams.has('qa-all-ready');
+const qaGhostNextMode = isLocalQa && pageParams.has('qa-ghost-next');
 const qaCountdown = Boolean(qaLevelId && pageParams.has('qa-countdown'));
 const qaTouchLayout = isLocalQa && pageParams.has('qa-touch');
 ['count-7', 'count-11', 'count-14-fast', 'count-9-fakes', 'count-16-fakes']
@@ -95,6 +98,7 @@ const state = {
   gameStartedAt: 0,
   challengeStartedAt: 0,
   liveInviteUrl: '',
+  inputGuardUntil: 0,
   randomSource: Math.random,
 };
 
@@ -105,6 +109,9 @@ const onlineState = {
   connectingRoomId: null,
   ownReady: false,
   readyBusy: false,
+  resultsPollTimer: null,
+  resultsPollAttempts: 0,
+  persistedResultsAvailable: null,
   pendingRematch: null,
   ownRematch: null,
   acceptedRematch: null,
@@ -288,14 +295,9 @@ function renderLivePresence(entries = onlineState.participants) {
   pill.hidden = !liveMode;
   $('#live-player-count').textContent = String(Math.max(1, participants.length));
 
-  const liveCopy = $('.live-start .countdown-copy p');
-  if (liveCopy && participants.length) {
-    liveCopy.textContent = `${participants.length} ${participants.length === 1 ? 'giocatore connesso' : 'giocatori connessi'}. Tutti pronti: la partita sta iniziando.`;
-  }
-
   const lobbyStatus = $('.live-lobby-status');
+  const readyCount = participants.filter((participant) => participant.ready).length;
   if (lobbyStatus) {
-    const readyCount = participants.filter((participant) => participant.ready).length;
     lobbyStatus.textContent = participants.length < 2
       ? state.mode === 'challenge-live-host'
         ? 'LINK INVIATO · IN ATTESA DEGLI AMICI'
@@ -303,6 +305,10 @@ function renderLivePresence(entries = onlineState.participants) {
       : readyCount === participants.length
         ? 'TUTTI PRONTI · SI PARTE!'
         : `${readyCount}/${participants.length} PRONTI`;
+  }
+  const lobbyReadyCount = $('.live-lobby-ready-count');
+  if (lobbyReadyCount) {
+    lobbyReadyCount.textContent = `${readyCount}/${Math.max(1, participants.length)} PRONTI`;
   }
 
   const lobbyList = $('.live-lobby-players');
@@ -331,7 +337,7 @@ function renderLivePresence(entries = onlineState.participants) {
     const sharedStart = participants
       .map((participant) => Number(participant.startAt))
       .find((startAt) => Number.isFinite(startAt) && startAt > Date.now() - 1000 && startAt < Date.now() + 15000);
-    if (sharedStart) beginInitialLiveCountdown(sharedStart);
+    if (sharedStart) beginInitialLiveStart(sharedStart);
   }
   if (state.mode === 'challenge-live-host') void maybeScheduleInitialLiveStart();
 
@@ -377,6 +383,83 @@ async function trackLiveState(patch) {
   return outcomes.some((outcome) => outcome.status === 'fulfilled');
 }
 
+function stopLiveResultsPolling() {
+  clearInterval(onlineState.resultsPollTimer);
+  onlineState.resultsPollTimer = null;
+  onlineState.resultsPollAttempts = 0;
+}
+
+function liveResultsRpcIsMissing(error) {
+  return /save_live_result|get_live_results/i.test(String(error?.message || ''))
+    && /does not exist|schema cache|could not find/i.test(String(error?.message || ''));
+}
+
+async function syncPersistedLiveResults() {
+  if (!isSupabaseConfigured()
+    || !state.mode.startsWith('challenge-live')
+    || !state.roomId
+    || onlineState.persistedResultsAvailable === false) return 0;
+  try {
+    const rows = await fetchLiveRoomResults(state.roomId, state.roomRound);
+    onlineState.persistedResultsAvailable = true;
+    rows.forEach((entry) => mergeLiveParticipant({
+      userId: entry.player_id,
+      nickname: entry.nickname || 'GIOCATORE',
+      status: 'finished',
+      score: Number(entry.score),
+      grade: entry.grade,
+      round: state.deck.length,
+      roomRound: state.roomRound,
+      updatedAt: Date.parse(entry.finished_at || '') || Date.now(),
+    }));
+    renderLivePresence(onlineState.participants);
+    const participants = currentRoomParticipants();
+    if (participants.length >= 2 && participants.every((entry) => entry.status === 'finished')) {
+      stopLiveResultsPolling();
+    }
+    return rows.length;
+  } catch (error) {
+    if (liveResultsRpcIsMissing(error)) {
+      onlineState.persistedResultsAvailable = false;
+      stopLiveResultsPolling();
+    } else {
+      console.warn('QUASI! live results refresh failed:', error);
+    }
+    return 0;
+  }
+}
+
+function startLiveResultsPolling() {
+  stopLiveResultsPolling();
+  onlineState.resultsPollAttempts = 1;
+  void syncPersistedLiveResults();
+  onlineState.resultsPollTimer = setInterval(() => {
+    onlineState.resultsPollAttempts += 1;
+    if (onlineState.resultsPollAttempts > 100 || !resultScreen.classList.contains('is-active')) {
+      stopLiveResultsPolling();
+      return;
+    }
+    void syncPersistedLiveResults();
+  }, 3000);
+}
+
+async function persistLiveResult(liveResult) {
+  if (!isSupabaseConfigured() || !state.roomId || onlineState.persistedResultsAvailable === false) return;
+  try {
+    await saveLiveRoomResult({
+      roomId: state.roomId,
+      roomRound: state.roomRound,
+      score: liveResult.score,
+      grade: liveResult.grade,
+    });
+    onlineState.persistedResultsAvailable = true;
+    await syncPersistedLiveResults();
+  } catch (error) {
+    if (liveResultsRpcIsMissing(error)) onlineState.persistedResultsAvailable = false;
+    else console.warn('QUASI! live result save failed:', error);
+  }
+}
+
 function initialLivePresencePatch() {
   const waiting = state.round === 0 && state.results.length === 0 && (!state.startAt || state.startAt > Date.now());
   return {
@@ -390,13 +473,14 @@ function initialLivePresencePatch() {
   };
 }
 
-function beginInitialLiveCountdown(startAt) {
+function beginInitialLiveStart(startAt) {
   if (!state.mode.startsWith('challenge-live') || state.round !== 0 || state.results.length > 0) return;
   const safeStartAt = Number(startAt);
-  if (!Number.isFinite(safeStartAt) || safeStartAt < Date.now() - 1000 || safeStartAt > Date.now() + 15000) return;
+  if (!Number.isFinite(safeStartAt) || safeStartAt < Date.now() - 5000 || safeStartAt > Date.now() + 15000) return;
   if (state.startAt && state.startAt <= safeStartAt) return;
   state.startAt = safeStartAt;
   onlineState.ownReady = true;
+  state.gameStartedAt = Date.now();
   void trackLiveState(initialLivePresencePatch());
   renderChallenge();
 }
@@ -411,9 +495,10 @@ async function maybeScheduleInitialLiveStart() {
     || participants.some((participant) => !participant.ready)
     || !onlineState.room) return;
 
-  const startAt = Date.now() + 3000;
+  const startAt = Date.now();
   state.startAt = startAt;
   onlineState.ownReady = true;
+  state.gameStartedAt = Date.now();
   try {
     await trackLiveState(initialLivePresencePatch());
     await onlineState.room.send('challenge_start', { startAt, roomRound: state.roomRound });
@@ -489,7 +574,7 @@ async function handleRealtimeEvent(payload) {
   if (!payload?.type || payload.senderId === onlineState.room?.profile?.userId) return;
   if (payload.type === 'challenge_start') {
     if (Number(payload.roomRound || 1) !== state.roomRound) return;
-    beginInitialLiveCountdown(payload.startAt);
+    beginInitialLiveStart(payload.startAt);
     return;
   }
   if (payload.type === 'player_state') {
@@ -527,7 +612,7 @@ async function handleRealtimeEvent(payload) {
     onlineState.acceptedNames.add(payload.senderName || 'Un amico');
     $('#rematch-acceptances').textContent = `${payload.senderName || 'Un amico'} ha accettato!`;
     if (!onlineState.ownRematch.startAt) {
-      onlineState.ownRematch = { ...onlineState.ownRematch, startAt: Date.now() + 10000 };
+      onlineState.ownRematch = { ...onlineState.ownRematch, startAt: Date.now() };
       try {
         await onlineState.room.send('rematch_start', onlineState.ownRematch);
         beginAcceptedRematch(onlineState.ownRematch);
@@ -849,6 +934,15 @@ function blockGameSpaceScroll(event) {
 window.addEventListener('keydown', blockGameSpaceScroll, { capture: true });
 window.addEventListener('keyup', blockGameSpaceScroll, { capture: true });
 
+function blockTransitionGhostClick(event) {
+  if (performance.now() >= state.inputGuardUntil || !gameScreen.classList.contains('is-active')) return;
+  if (!(event.target instanceof Element) || !event.target.closest('.challenge-stage, .challenge-controls')) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}
+
+window.addEventListener('click', blockTransitionGhostClick, { capture: true });
+
 function addKeyHandler(keys, handler) {
   const listener = (event) => {
     if (keys.includes(event.code) && !event.repeat && feedbackLayer.hidden) {
@@ -917,6 +1011,7 @@ function usesTouchChallengeLayout() {
 }
 
 function challengeResult(score, detail) {
+  if (performance.now() < state.inputGuardUntil) return;
   if (state.locked) return;
   state.locked = true;
   const finalScore = clamp(Math.round(score), 0, 100);
@@ -925,6 +1020,7 @@ function challengeResult(score, detail) {
   $('#feedback-score').textContent = finalScore;
   $('#feedback-title').textContent = scoreMessage(finalScore);
   $('#feedback-detail').textContent = detail;
+  $('#next-button').disabled = false;
   if (state.mode === 'training') {
     const challenge = state.deck[0];
     const bestKey = `quasi-training-best:${challenge.id}`;
@@ -971,6 +1067,7 @@ function startGame({
   roomRound = 1,
 } = {}) {
   clearChallenge();
+  stopLiveResultsPolling();
   const recentKinds = storedList('quasi-recent-kinds');
   const recentIds = storedList('quasi-recent-levels');
   state.deck = deck ? [...deck] : buildDeck(10, { excludedKinds: recentKinds, excludedIds: recentIds });
@@ -1004,6 +1101,7 @@ function startGame({
   state.results = [];
   state.round = 0;
   state.locked = false;
+  state.inputGuardUntil = 0;
   howDialog.close();
   if (trainingDialog.open) trainingDialog.close();
   showScreen(gameScreen);
@@ -1013,7 +1111,12 @@ function startGame({
 
 function renderChallenge() {
   clearChallenge();
-  state.locked = false;
+  const transitionLockMs = Math.max(0, state.inputGuardUntil - performance.now());
+  state.locked = transitionLockMs > 0;
+  if (transitionLockMs > 0) {
+    const unlockTimer = setTimeout(() => { state.locked = false; }, transitionLockMs + 20);
+    registerCleanup(() => clearTimeout(unlockTimer));
+  }
   const challenge = state.deck[state.round];
   state.randomSource = seededRandom(`${state.challengeSeed}:${state.round}:${challenge.id}`);
   const isTraining = state.mode === 'training';
@@ -1051,7 +1154,6 @@ function renderChallenge() {
     else launchRenderer();
   };
   if (state.round === 0 && state.mode.startsWith('challenge-live') && !state.startAt) renderLiveLobby();
-  else if (state.round === 0 && state.startAt && state.startAt > Date.now()) renderLiveWaiting(beginChallenge);
   else beginChallenge();
 }
 
@@ -1075,7 +1177,7 @@ function renderLiveLobby() {
       </div>
       <div class="live-pulse" aria-hidden="true"><i></i></div>
       <section class="live-lobby-roster" aria-label="Giocatori nella sala d’attesa">
-        <div><span>GIOCATORI NELLA SALA</span><b>LIVE</b></div>
+        <div><span>GIOCATORI NELLA SALA</span><b class="live-lobby-ready-count">0/1 PRONTI</b></div>
         <ul class="live-lobby-players"></ul>
       </section>
       <strong class="live-lobby-status">IN ATTESA DEGLI AMICI</strong>
@@ -1099,41 +1201,6 @@ function renderLiveLobby() {
     controls.append(shareAgain);
   }
   renderLivePresence(onlineState.participants);
-}
-
-function renderLiveWaiting(onReady) {
-  const waiting = document.createElement('div');
-  waiting.className = 'start-countdown live-start';
-  waiting.innerHTML = `
-    <div class="countdown-panel">
-      <div class="countdown-copy">
-        <span>SFIDA LIVE</span>
-        <h3>INSIEME.</h3>
-        <p>Amico/a connesso/a. La partita sta per iniziare per tutti.</p>
-      </div>
-      <div class="countdown-number-box">
-        <strong class="live-clock">${Math.max(1, Math.ceil((state.startAt - Date.now()) / 1000))}</strong>
-        <small>SECONDI</small>
-      </div>
-      <div class="live-pulse" aria-hidden="true"><i></i></div>
-    </div>
-  `;
-  stage.append(waiting);
-  const interval = setInterval(() => {
-    const remaining = state.startAt - Date.now();
-    if (remaining > 0) {
-      $('.live-clock', waiting).textContent = String(Math.max(1, Math.ceil(remaining / 1000)));
-      return;
-    }
-    clearInterval(interval);
-    stage.replaceChildren();
-    controls.replaceChildren();
-    tone(680, .1, 'triangle');
-    state.gameStartedAt = Date.now();
-    void trackLiveState(initialLivePresencePatch());
-    onReady();
-  }, 100);
-  registerCleanup(() => clearInterval(interval));
 }
 
 function startsAutomatically(challenge) {
@@ -1235,6 +1302,8 @@ function finishGame() {
       roomRound: state.roomRound,
     };
     void trackLiveState(liveResult);
+    void persistLiveResult(liveResult);
+    startLiveResultsPolling();
     if (onlineState.room) {
       void onlineState.room.send('score', liveResult).catch(() => {
         showToast('Risultato live non inviato: controllo la connessione.');
@@ -2205,6 +2274,7 @@ function addReliableTouchActivation(button, handler) {
 
 function returnHome() {
   clearChallenge();
+  stopLiveResultsPolling();
   feedbackLayer.hidden = true;
   clearInterval(onlineState.rematchTimer);
   onlineState.room = null;
@@ -2271,6 +2341,9 @@ $('#how-button').addEventListener('click',()=>openManagedDialog(howDialog));
 $$('.dialog-close').forEach((button)=>button.addEventListener('click',()=>closeManagedDialog(button.closest('dialog'))));
 $('.dialog-close-action', bestScoreDialog).addEventListener('click', () => closeManagedDialog(bestScoreDialog));
 addReliableTouchActivation($('#next-button'), () => {
+  if ($('#next-button').disabled) return;
+  $('#next-button').disabled = true;
+  state.inputGuardUntil = performance.now() + 550;
   feedbackLayer.hidden = true;
   if (state.mode === 'training') {
     startTrainingLevel(state.deck[0]);
@@ -2375,6 +2448,16 @@ if (qaResultMode) {
     { userId: 'qa-two', nickname: 'BRUNO', status: 'waiting', ready: true, round: 0, roomRound: 1, updatedAt: 1000 },
     { userId: 'qa-three', nickname: 'CARLA', status: 'waiting', ready: qaAllReady, round: 0, roomRound: 1, updatedAt: 1000 },
   ]);
+} else if (qaGhostNextMode) {
+  startGame({
+    mode: 'solo',
+    deck: [challengeCatalog.get('timer-3000'), challengeCatalog.get('reaction-green')],
+    seed: 'qa-ghost-next',
+  });
+  challengeResult(80, 'Risultato dimostrativo per il collaudo della transizione.');
+  $('#next-button').addEventListener('click', () => {
+    setTimeout(() => challengeResult(0, 'Evento tardivo simulato dal livello precedente.'), 25);
+  }, { once: true, capture: true });
 } else if (qaLevelId && challengeCatalog.has(qaLevelId)) {
   startTrainingLevel(challengeCatalog.get(qaLevelId));
 

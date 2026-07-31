@@ -72,6 +72,24 @@ create table if not exists public.level_bests (
   constraint level_best_id_safe check (level_id ~ '^[a-z0-9][a-z0-9-]{0,79}$')
 );
 
+-- Riepilogo effimero delle sfide live. Conserva i risultati abbastanza a lungo
+-- perché anche l'ultimo giocatore possa recuperarli, poi vengono eliminati.
+create table if not exists public.live_room_results (
+  room_id text not null,
+  room_round integer not null check (room_round between 1 and 1000),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  nickname text not null,
+  score smallint not null check (score between 0 and 100),
+  grade text not null check (grade in ('S+', 'S', 'A', 'B', 'C', 'D', 'E')),
+  finished_at timestamptz not null default now(),
+  expires_at timestamptz not null default (now() + interval '6 hours'),
+  primary key (room_id, room_round, user_id),
+  constraint live_room_id_safe check (room_id ~ '^[A-Za-z0-9_-]{12,96}$')
+);
+
+create index if not exists live_room_results_expiry_idx
+  on public.live_room_results (expires_at);
+
 -- Migrazione dagli schemi precedenti: i dati già presenti provengono dal
 -- collaudo locale precedente alla pubblicazione e restano isolati in "local".
 alter table public.score_submissions
@@ -122,6 +140,7 @@ alter table public.score_submissions enable row level security;
 alter table public.player_bests enable row level security;
 alter table public.level_score_submissions enable row level security;
 alter table public.level_bests enable row level security;
+alter table public.live_room_results enable row level security;
 
 drop policy if exists "players read own profile" on public.profiles;
 create policy "players read own profile"
@@ -167,6 +186,7 @@ revoke all on public.score_submissions from anon, authenticated;
 revoke all on public.player_bests from anon, authenticated;
 revoke all on public.level_score_submissions from anon, authenticated;
 revoke all on public.level_bests from anon, authenticated;
+revoke all on public.live_room_results from anon, authenticated;
 grant select, insert, update on public.profiles to authenticated;
 grant select on public.score_submissions to authenticated;
 grant select on public.player_bests to authenticated;
@@ -507,6 +527,90 @@ as $$
   order by r.rank_position;
 $$;
 
+drop function if exists public.save_live_result(text, integer, integer, text);
+create function public.save_live_result(
+  p_room_id text,
+  p_room_round integer,
+  p_score integer,
+  p_grade text
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_nickname text;
+begin
+  if v_user_id is null then raise exception 'authentication required'; end if;
+  if p_room_id !~ '^[A-Za-z0-9_-]{12,96}$' then raise exception 'invalid room id'; end if;
+  if p_room_round not between 1 and 1000 then raise exception 'invalid room round'; end if;
+  if p_score not between 0 and 100 then raise exception 'invalid score'; end if;
+  if p_grade not in ('S+', 'S', 'A', 'B', 'C', 'D', 'E') then raise exception 'invalid grade'; end if;
+
+  select nickname into v_nickname from public.profiles where id = v_user_id;
+  if v_nickname is null then raise exception 'profile required'; end if;
+
+  delete from public.live_room_results where expires_at < now();
+
+  insert into public.live_room_results(
+    room_id, room_round, user_id, nickname, score, grade, finished_at, expires_at
+  ) values (
+    p_room_id, p_room_round, v_user_id, v_nickname, p_score, p_grade, now(), now() + interval '6 hours'
+  )
+  on conflict (room_id, room_round, user_id) do update set
+    nickname = excluded.nickname,
+    score = excluded.score,
+    grade = excluded.grade,
+    finished_at = excluded.finished_at,
+    expires_at = excluded.expires_at;
+end;
+$$;
+
+drop function if exists public.get_live_results(text, integer);
+create function public.get_live_results(p_room_id text, p_room_round integer)
+returns table(
+  player_id uuid,
+  nickname text,
+  score integer,
+  grade text,
+  finished_at timestamptz
+)
+language plpgsql
+security definer
+stable
+set search_path = ''
+as $$
+begin
+  if auth.uid() is null then raise exception 'authentication required'; end if;
+  if p_room_id !~ '^[A-Za-z0-9_-]{12,96}$' then raise exception 'invalid room id'; end if;
+  if p_room_round not between 1 and 1000 then raise exception 'invalid room round'; end if;
+
+  -- Il risultato è visibile soltanto a chi ha terminato lo stesso round.
+  if not exists (
+    select 1 from public.live_room_results mine
+    where mine.room_id = p_room_id
+      and mine.room_round = p_room_round
+      and mine.user_id = auth.uid()
+      and mine.expires_at > now()
+  ) then return; end if;
+
+  return query
+  select
+    result.user_id,
+    result.nickname,
+    result.score::integer,
+    result.grade,
+    result.finished_at
+  from public.live_room_results result
+  where result.room_id = p_room_id
+    and result.room_round = p_room_round
+    and result.expires_at > now()
+  order by result.score desc, result.finished_at asc;
+end;
+$$;
+
 revoke all on function public.submit_score(integer, text, integer, jsonb, jsonb, text) from public, anon;
 grant execute on function public.submit_score(integer, text, integer, jsonb, jsonb, text) to authenticated;
 revoke all on function public.submit_level_score(text, integer, integer, text) from public, anon;
@@ -515,6 +619,10 @@ revoke all on function public.get_leaderboard(text, text) from public;
 grant execute on function public.get_leaderboard(text, text) to authenticated;
 revoke all on function public.get_level_leaderboard(text, text) from public;
 grant execute on function public.get_level_leaderboard(text, text) to authenticated;
+revoke all on function public.save_live_result(text, integer, integer, text) from public, anon;
+grant execute on function public.save_live_result(text, integer, integer, text) to authenticated;
+revoke all on function public.get_live_results(text, integer) from public, anon;
+grant execute on function public.get_live_results(text, integer) to authenticated;
 
 -- Canali privati QUASI!: l'identificativo della stanza è un token casuale ad alta entropia.
 drop policy if exists "quasi realtime receive" on realtime.messages;

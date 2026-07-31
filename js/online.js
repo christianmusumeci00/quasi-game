@@ -265,3 +265,25 @@ export async function fetchLevelLeaderboard(levelId) {
   if (error) throw error;
   return data || [];
 }
+
+export async function saveLiveRoomResult({ roomId, roomRound, score, grade }) {
+  const { client } = await getOnlineClient();
+  await ensureOnlineProfile(getPlayerName());
+  const { error } = await client.rpc('save_live_result', {
+    p_room_id: String(roomId || ''),
+    p_room_round: Math.max(1, Math.round(Number(roomRound) || 1)),
+    p_score: Math.round(Number(score)),
+    p_grade: String(grade || ''),
+  });
+  if (error) throw error;
+}
+
+export async function fetchLiveRoomResults(roomId, roomRound) {
+  const { client } = await getOnlineClient();
+  const { data, error } = await client.rpc('get_live_results', {
+    p_room_id: String(roomId || ''),
+    p_room_round: Math.max(1, Math.round(Number(roomRound) || 1)),
+  });
+  if (error) throw error;
+  return data || [];
+}

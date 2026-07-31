@@ -110,9 +110,8 @@ button:focus-visible, [tabindex]:focus-visible { outline: 4px solid var(--violet
   font-weight: 1000;
   letter-spacing: .1em;
 }
-.cloud-pill i, .live-room-pill i { width: 8px; height: 8px; border-radius: 50%; background: #999; }
-.cloud-pill.is-online i, .live-room-pill i { background: var(--mint); box-shadow: 0 0 0 4px rgba(38,201,167,.16); }
-.cloud-pill.is-error i { background: var(--orange); }
+.cloud-crown { font-size: .92rem; line-height: 1; letter-spacing: 0; transform: translateY(-1px); }
+.live-room-pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 4px rgba(38,201,167,.16); }
 
 .best-pill {
   height: 43px;
@@ -277,8 +276,6 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
 .countdown-steps { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
 .countdown-steps i { height: 7px; border-radius: 99px; background: var(--paper-2); transition: background .2s ease; }
 .countdown-steps i.is-done { background: var(--orange); }
-.live-start .countdown-number-box { width: 185px; background: var(--ink); }
-.live-start .live-clock { color: var(--yellow); font-size: 3.25rem; line-height: 1; letter-spacing: -.06em; font-variant-numeric: tabular-nums; }
 .live-lobby .countdown-panel { grid-template-columns: minmax(0,1fr) 145px; }
 .live-lobby-box { width: 145px; background: var(--violet); }
 .live-lobby-box strong { color: white; font-size: 4rem; letter-spacing: .04em; animation: lobby-dots 1.15s ease-in-out infinite alternate; }
@@ -880,8 +877,6 @@ dialog li span { color: rgba(23,21,19,.65); line-height: 1.4; font-size: .86rem;
   .countdown-number-box { width: 112px; height: 125px; border-radius: 16px; }
   .countdown-number-box strong { font-size: 5rem; }
   .countdown-number-box small { margin-top: 10px; font-size: .45rem; }
-  .live-start .countdown-number-box { width: 112px; }
-  .live-start .live-clock { font-size: 2.15rem; }
   .live-lobby .countdown-panel { grid-template-columns: minmax(0,1fr) 82px; gap: 13px; padding: 16px; }
   .live-lobby .countdown-copy h3 { font-size: clamp(1.45rem, 7vw, 2rem); }
   .live-lobby .countdown-copy p { font-size: .68rem; }
@@ -1025,11 +1020,9 @@ dialog li span { color: rgba(23,21,19,.65); line-height: 1.4; font-size: .86rem;
   body.is-playing .countdown-panel { padding: 12px; gap: 10px 14px; box-shadow: 0 5px 0 var(--ink); }
   body.is-playing .countdown-copy h3 { font-size: 1.45rem; }
   body.is-playing .countdown-copy p { margin-top: 5px; font-size: .65rem; }
-  body.is-playing .countdown-number-box,
-  body.is-playing .live-start .countdown-number-box { width: 88px; height: 88px; }
+  body.is-playing .countdown-number-box { width: 88px; height: 88px; }
   body.is-playing .countdown-number-box strong { font-size: 3.7rem; }
   body.is-playing .countdown-number-box small { margin-top: 5px; }
-  body.is-playing .live-start .live-clock { font-size: 1.65rem; }
   body.is-playing .rhythm-pad,
   body.is-playing .angle-dial,
   body.is-playing .percent-grid,
