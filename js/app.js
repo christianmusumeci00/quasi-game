@@ -1179,8 +1179,8 @@ function renderLiveLobby() {
       <section class="live-lobby-roster" aria-label="Giocatori nella sala d’attesa">
         <div><span>GIOCATORI NELLA SALA</span><b class="live-lobby-ready-count">0/1 PRONTI</b></div>
         <ul class="live-lobby-players"></ul>
+        <strong class="live-lobby-status">IN ATTESA DEGLI AMICI</strong>
       </section>
-      <strong class="live-lobby-status">IN ATTESA DEGLI AMICI</strong>
     </div>
   `;
   stage.append(waiting);
@@ -1696,14 +1696,22 @@ function renderCenter(config) {
   let target = {x:450+offset.x,y:165+offset.y}; let selected = null; let hidden = false;
   if (config.shape === 'triangle') target = {x:(250+700+420)/3+offset.x,y:(270+245+45)/3+offset.y};
   if (config.shape === 'blob') target = {x:445+offset.x,y:166+offset.y};
-  if (config.shape === 'circumcenter') target = {x:450+offset.x,y:166+offset.y};
   const shifted = (x, y) => ({ x: x + offset.x, y: y + offset.y });
+  const circumcenterPoints = [shifted(250,245), shifted(650,245), shifted(450,70)];
+  if (config.shape === 'circumcenter') {
+    const [a,b,c] = circumcenterPoints;
+    const divisor = 2 * (a.x*(b.y-c.y) + b.x*(c.y-a.y) + c.x*(a.y-b.y));
+    target = {
+      x: ((a.x*a.x+a.y*a.y)*(b.y-c.y) + (b.x*b.x+b.y*b.y)*(c.y-a.y) + (c.x*c.x+c.y*c.y)*(a.y-b.y)) / divisor,
+      y: ((a.x*a.x+a.y*a.y)*(c.x-b.x) + (b.x*b.x+b.y*b.y)*(a.x-c.x) + (c.x*c.x+c.y*c.y)*(b.x-a.x)) / divisor,
+    };
+  }
   const draw = () => {
     ctx.clearRect(0,0,canvas.width,canvas.height); ctx.lineWidth=4; ctx.strokeStyle='#171513'; ctx.fillStyle='#7558ff';
     if (config.shape === 'circle' || config.shape === 'hidden') { if (!hidden) { ctx.beginPath();ctx.arc(450+offset.x,165+offset.y,125,0,Math.PI*2);ctx.fill();ctx.stroke(); } }
     else if (config.shape === 'triangle') { const a=shifted(250,270),b=shifted(700,245),c=shifted(420,45);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.lineTo(c.x,c.y);ctx.closePath();ctx.fill();ctx.stroke(); }
     else if (config.shape === 'blob') { const a=shifted(250,110),b=shifted(360,10),c=shifted(550,45),d=shifted(670,125),e=shifted(750,210),f=shifted(590,315),g=shifted(430,275),h=shifted(280,320),i=shifted(165,225);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.bezierCurveTo(b.x,b.y,c.x,c.y,d.x,d.y);ctx.bezierCurveTo(e.x,e.y,f.x,f.y,g.x,g.y);ctx.bezierCurveTo(h.x,h.y,i.x,i.y,a.x,a.y);ctx.fill();ctx.stroke(); }
-    else { [shifted(250,245),shifted(650,245),shifted(450,21)].forEach((p)=>{ctx.fillStyle='#ff5b3d';ctx.beginPath();ctx.arc(p.x,p.y,16,0,Math.PI*2);ctx.fill();ctx.stroke();}); }
+    else { circumcenterPoints.forEach((p)=>{ctx.fillStyle='#ff5b3d';ctx.beginPath();ctx.arc(p.x,p.y,21,0,Math.PI*2);ctx.fill();ctx.stroke();}); }
     if (selected) { ctx.fillStyle='#ffc93d';ctx.beginPath();ctx.arc(selected.x,selected.y,11,0,Math.PI*2);ctx.fill();ctx.stroke(); }
     if (config.shape === 'hidden' && hidden && !selected) { ctx.font='900 22px system-ui';ctx.textAlign='center';ctx.fillStyle='#171513';ctx.fillText('DOV’ERA IL CENTRO?',450,165); }
   };
