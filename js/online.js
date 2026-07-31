@@ -137,8 +137,10 @@ export async function connectRealtimeRoom({ roomId, nickname, presence = {}, onP
     nickname: profile.nickname,
     status: 'online',
     joinedAt: new Date().toISOString(),
+    updatedAt: Date.now(),
     ...presence,
   };
+  let presenceTrackQueue = Promise.resolve();
 
   const channel = client.channel(topic, {
     config: {
@@ -189,9 +191,15 @@ export async function connectRealtimeRoom({ roomId, nickname, presence = {}, onP
       if (response !== 'ok') throw new Error('realtime-send-failed');
     },
     async track(patch = {}) {
-      currentPresence = { ...currentPresence, ...patch };
-      const response = await channel.track(currentPresence);
-      if (response !== 'ok') throw new Error('presence-track-failed');
+      currentPresence = { ...currentPresence, ...patch, updatedAt: Date.now() };
+      const presenceSnapshot = { ...currentPresence };
+      presenceTrackQueue = presenceTrackQueue
+        .catch(() => undefined)
+        .then(async () => {
+          const response = await channel.track(presenceSnapshot);
+          if (response !== 'ok') throw new Error('presence-track-failed');
+        });
+      return presenceTrackQueue;
     },
   };
   return roomConnection;

@@ -16,10 +16,11 @@ Il sito continuerà a essere pubblicato da GitHub Pages. Supabase fornisce solta
 
 1. Apri il sito in due browser diversi o in una finestra normale e una privata.
 2. Nel primo scegli **Sfida un amico**, copia il link e aprilo nel secondo.
-3. Verifica che il primo browser resti in attesa senza scadenza e che, appena il secondo entra, entrambi mostrino due giocatori online e lo stesso countdown di 3 secondi.
-4. Termina la partita sui due dispositivi: entrambi devono mostrare i punteggi live.
-5. Premi **Gioca ancora**, accetta dall’altro dispositivo e verifica che la rivincita parta senza un nuovo link.
-6. Dalla home apri **Classifica mondiale** e verifica record e nickname.
+3. Verifica che il primo browser resti nella sala d’attesa senza scadenza, che il secondo compaia nell’elenco e che entrambi possano premere **Sono pronto**. Solo quando tutti i partecipanti sono pronti deve apparire lo stesso countdown di 3 secondi.
+4. Completa una partita da almeno tre browser o dispositivi e controlla che **Risultati live** mostri l’avanzamento e il punteggio finale di ciascun partecipante.
+5. Termina la partita sui due dispositivi: entrambi devono mostrare i punteggi live.
+6. Premi **Gioca ancora**, accetta dall’altro dispositivo e verifica che la rivincita parta senza un nuovo link.
+7. Dalla home apri **Classifica mondiale** e verifica record e nickname.
 7. Completa un livello in **Allenamento**, apri **Classifica del livello** e verifica che record e posizione mondiale siano presenti.
 8. Ricorda che il collaudo su `localhost`, indirizzi LAN o domini `.local` usa una classifica `local` separata: per verificare i dati pubblici esegui anche una prova dal dominio GitHub Pages.
 

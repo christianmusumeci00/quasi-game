@@ -13,7 +13,7 @@ import {
   submitLevelScore,
   submitWorldScore,
   validatePlayerName,
-} from './online.js?v=20260730.31';
+} from './online.js?v=20260731.1';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -28,6 +28,9 @@ const pageParams = new URLSearchParams(window.location.search);
 const isLocalQa = ['localhost', '127.0.0.1'].includes(window.location.hostname);
 const qaLevelId = isLocalQa ? pageParams.get('qa-level') : null;
 const qaResultMode = isLocalQa && pageParams.has('qa-result');
+const qaLiveLobbyMode = isLocalQa && pageParams.has('qa-live-lobby');
+const qaLiveResultsMode = isLocalQa && pageParams.has('qa-live-results');
+const qaAllReady = qaLiveLobbyMode && pageParams.has('qa-all-ready');
 const qaCountdown = Boolean(qaLevelId && pageParams.has('qa-countdown'));
 const qaTouchLayout = isLocalQa && pageParams.has('qa-touch');
 ['count-7', 'count-11', 'count-14-fast', 'count-9-fakes', 'count-16-fakes']
@@ -98,7 +101,10 @@ const state = {
 const onlineState = {
   room: null,
   participants: [],
+  finishedParticipants: new Map(),
   connectingRoomId: null,
+  ownReady: false,
+  readyBusy: false,
   pendingRematch: null,
   ownRematch: null,
   acceptedRematch: null,
@@ -151,7 +157,7 @@ if (incomingChallenge) {
   } else if (incomingChallenge.score === null && incomingChallenge.live) {
     $('#challenge-invite > span').textContent = 'SFIDA LIVE';
     $('.challenge-invite strong').innerHTML = '<b>INVITO</b> PRONTO';
-    $('.challenge-invite small').textContent = 'Entra nella stanza: il countdown partirà quando sarete collegati.';
+    $('.challenge-invite small').textContent = 'Entra nella sala d’attesa e mettiti pronto insieme agli altri giocatori.';
     $('#challenge-button span').textContent = 'ENTRA NELLA LOBBY';
   } else {
     $('#opponent-score').textContent = incomingChallenge.score;
@@ -207,42 +213,122 @@ function closeManagedDialog(dialog) {
   }
 }
 
+function participantTimestamp(entry) {
+  const timestamp = Number(entry?.updatedAt);
+  if (Number.isFinite(timestamp)) return timestamp;
+  return Date.parse(entry?.joinedAt || '') || 0;
+}
+
+function preferredParticipant(first, second) {
+  if (!first) return second;
+  const firstRoomRound = Number(first.roomRound || 1);
+  const secondRoomRound = Number(second.roomRound || 1);
+  if (firstRoomRound !== secondRoomRound) return secondRoomRound > firstRoomRound ? second : first;
+  if (first.status === 'finished' || second.status === 'finished') {
+    if (first.status !== second.status) return second.status === 'finished' ? second : first;
+  }
+  const firstTimestamp = participantTimestamp(first);
+  const secondTimestamp = participantTimestamp(second);
+  if (firstTimestamp !== secondTimestamp) return secondTimestamp > firstTimestamp ? second : first;
+  const firstRound = Number(first.round || 0);
+  const secondRound = Number(second.round || 0);
+  if (firstRound !== secondRound) return secondRound > firstRound ? second : first;
+  return second;
+}
+
 function uniqueParticipants(entries) {
   const byUser = new Map();
   entries.forEach((entry) => {
     if (!entry.userId) return;
-    const existing = byUser.get(entry.userId);
-    if (!existing || entry.status === 'finished' || Number(entry.round || 0) >= Number(existing.round || 0)) {
-      byUser.set(entry.userId, entry);
-    }
+    byUser.set(entry.userId, preferredParticipant(byUser.get(entry.userId), entry));
   });
   return [...byUser.values()];
 }
 
+function mergePresenceSnapshot(entries) {
+  const previousByUser = new Map(onlineState.participants.map((entry) => [entry.userId, entry]));
+  return uniqueParticipants(entries).map((entry) => preferredParticipant(previousByUser.get(entry.userId), entry));
+}
+
+function currentRoomParticipants() {
+  const connected = onlineState.participants.filter((entry) => Number(entry.roomRound || 1) === state.roomRound);
+  const finished = [...onlineState.finishedParticipants.values()]
+    .filter((entry) => Number(entry.roomRound || 1) === state.roomRound);
+  return uniqueParticipants([...connected, ...finished]);
+}
+
+function mergeLiveParticipant(entry) {
+  if (!entry?.userId) return;
+  const existing = onlineState.participants.find((participant) => participant.userId === entry.userId);
+  const merged = preferredParticipant(existing, { ...existing, ...entry });
+  onlineState.participants = uniqueParticipants([
+    ...onlineState.participants.filter((participant) => participant.userId !== entry.userId),
+    merged,
+  ]);
+  if (merged.status === 'finished') {
+    onlineState.finishedParticipants.set(`${Number(merged.roomRound || 1)}:${merged.userId}`, merged);
+  }
+}
+
+function lobbyStatusLabel(entry) {
+  if (entry.status === 'finished') return 'FINITO ✓';
+  if (entry.status === 'playing') return `LIVELLO ${entry.round || 1}`;
+  if (entry.status === 'countdown') return 'SI PARTE!';
+  return entry.ready ? 'PRONTO ✓' : 'NON PRONTO';
+}
+
 function renderLivePresence(entries = onlineState.participants) {
-  onlineState.participants = uniqueParticipants(entries);
+  onlineState.participants = mergePresenceSnapshot(entries);
+  onlineState.participants
+    .filter((entry) => entry.status === 'finished')
+    .forEach((entry) => onlineState.finishedParticipants.set(`${Number(entry.roomRound || 1)}:${entry.userId}`, entry));
+  const participants = currentRoomParticipants();
   const pill = $('#live-room-pill');
   const liveMode = state.mode.startsWith('challenge-live');
   pill.hidden = !liveMode;
-  $('#live-player-count').textContent = String(Math.max(1, onlineState.participants.length));
+  $('#live-player-count').textContent = String(Math.max(1, participants.length));
 
   const liveCopy = $('.live-start .countdown-copy p');
-  if (liveCopy && onlineState.participants.length) {
-    liveCopy.textContent = `${onlineState.participants.length} ${onlineState.participants.length === 1 ? 'giocatore connesso' : 'giocatori connessi'}. La partita partirà automaticamente.`;
+  if (liveCopy && participants.length) {
+    liveCopy.textContent = `${participants.length} ${participants.length === 1 ? 'giocatore connesso' : 'giocatori connessi'}. Tutti pronti: la partita sta iniziando.`;
   }
 
   const lobbyStatus = $('.live-lobby-status');
   if (lobbyStatus) {
-    lobbyStatus.textContent = onlineState.participants.length > 1
-      ? 'AMICO/A CONNESSO/A · PREPARATI!'
-      : state.mode === 'challenge-live-host'
-        ? 'LINK INVIATO · IN ATTESA DELL’AMICO/A'
-        : 'CONNESSIONE ALLA STANZA LIVE…';
+    const readyCount = participants.filter((participant) => participant.ready).length;
+    lobbyStatus.textContent = participants.length < 2
+      ? state.mode === 'challenge-live-host'
+        ? 'LINK INVIATO · IN ATTESA DEGLI AMICI'
+        : 'CONNESSIONE ALLA SALA LIVE…'
+      : readyCount === participants.length
+        ? 'TUTTI PRONTI · SI PARTE!'
+        : `${readyCount}/${participants.length} PRONTI`;
+  }
+
+  const lobbyList = $('.live-lobby-players');
+  if (lobbyList) {
+    const ownUserId = onlineState.room?.profile?.userId;
+    lobbyList.replaceChildren(...participants.map((entry) => {
+      const item = document.createElement('li');
+      const name = document.createElement('span');
+      const status = document.createElement('b');
+      item.classList.toggle('is-ready', Boolean(entry.ready));
+      item.classList.toggle('is-self', entry.userId === ownUserId);
+      name.textContent = `${entry.nickname || 'GIOCATORE'}${entry.userId === ownUserId ? ' · TU' : ''}`;
+      status.textContent = lobbyStatusLabel(entry);
+      item.append(name, status);
+      return item;
+    }));
+  }
+  const readyButton = $('.live-ready-button');
+  if (readyButton) {
+    readyButton.disabled = onlineState.readyBusy || Boolean(state.startAt);
+    readyButton.classList.toggle('is-ready', onlineState.ownReady);
+    readyButton.textContent = onlineState.ownReady ? 'PRONTO ✓' : 'SONO PRONTO';
   }
 
   if (state.mode === 'challenge-live-guest' && !state.startAt) {
-    const sharedStart = onlineState.participants
-      .filter((participant) => Number(participant.roomRound || 1) === state.roomRound)
+    const sharedStart = participants
       .map((participant) => Number(participant.startAt))
       .find((startAt) => Number.isFinite(startAt) && startAt > Date.now() - 1000 && startAt < Date.now() + 15000);
     if (sharedStart) beginInitialLiveCountdown(sharedStart);
@@ -253,7 +339,7 @@ function renderLivePresence(entries = onlineState.participants) {
   panel.hidden = !liveMode || resultScreen.classList.contains('is-active') === false;
   if (panel.hidden) return;
 
-  const sorted = [...onlineState.participants].sort((first, second) => {
+  const sorted = [...participants].sort((first, second) => {
     if (first.status === 'finished' && second.status !== 'finished') return -1;
     if (second.status === 'finished' && first.status !== 'finished') return 1;
     return Number(second.score || -1) - Number(first.score || -1);
@@ -277,13 +363,25 @@ function renderLivePresence(entries = onlineState.participants) {
 async function trackLiveState(patch) {
   const room = onlineState.room || getRoomConnection();
   if (!room) return;
-  try { await room.track(patch); } catch { /* Presence is an enhancement; gameplay continues. */ }
+  const livePatch = { ...patch, updatedAt: Date.now() };
+  mergeLiveParticipant({
+    userId: room.profile.userId,
+    nickname: room.profile.nickname,
+    ...livePatch,
+  });
+  renderLivePresence(onlineState.participants);
+  const outcomes = await Promise.allSettled([
+    room.track(livePatch),
+    room.send('player_state', livePatch),
+  ]);
+  return outcomes.some((outcome) => outcome.status === 'fulfilled');
 }
 
 function initialLivePresencePatch() {
   const waiting = state.round === 0 && state.results.length === 0 && (!state.startAt || state.startAt > Date.now());
   return {
     status: waiting ? (state.startAt ? 'countdown' : 'waiting') : 'playing',
+    ready: waiting ? Boolean(state.startAt || onlineState.ownReady) : true,
     score: null,
     grade: null,
     round: waiting ? 0 : state.round + 1,
@@ -298,22 +396,26 @@ function beginInitialLiveCountdown(startAt) {
   if (!Number.isFinite(safeStartAt) || safeStartAt < Date.now() - 1000 || safeStartAt > Date.now() + 15000) return;
   if (state.startAt && state.startAt <= safeStartAt) return;
   state.startAt = safeStartAt;
+  onlineState.ownReady = true;
   void trackLiveState(initialLivePresencePatch());
   renderChallenge();
 }
 
 async function maybeScheduleInitialLiveStart() {
+  const participants = currentRoomParticipants();
   if (state.mode !== 'challenge-live-host'
     || state.round !== 0
     || state.results.length > 0
     || state.startAt
-    || onlineState.participants.length < 2
+    || participants.length < 2
+    || participants.some((participant) => !participant.ready)
     || !onlineState.room) return;
 
   const startAt = Date.now() + 3000;
   state.startAt = startAt;
+  onlineState.ownReady = true;
   try {
-    await onlineState.room.track(initialLivePresencePatch());
+    await trackLiveState(initialLivePresencePatch());
     await onlineState.room.send('challenge_start', { startAt, roomRound: state.roomRound });
     renderChallenge();
   } catch {
@@ -321,6 +423,17 @@ async function maybeScheduleInitialLiveStart() {
     void trackLiveState(initialLivePresencePatch());
     showToast('Non riesco ad avviare il countdown. Controlla la connessione.');
   }
+}
+
+async function toggleLobbyReady() {
+  if (onlineState.readyBusy || state.startAt || !state.mode.startsWith('challenge-live')) return;
+  onlineState.readyBusy = true;
+  onlineState.ownReady = !onlineState.ownReady;
+  renderLivePresence(onlineState.participants);
+  const updated = await trackLiveState(initialLivePresencePatch());
+  onlineState.readyBusy = false;
+  renderLivePresence(onlineState.participants);
+  if (!updated) showToast('Stato “Pronto” non sincronizzato. Controlla la connessione e riprova.');
 }
 
 function showRematchDialog(role, proposal) {
@@ -379,7 +492,25 @@ async function handleRealtimeEvent(payload) {
     beginInitialLiveCountdown(payload.startAt);
     return;
   }
+  if (payload.type === 'player_state') {
+    mergeLiveParticipant({
+      ...payload,
+      userId: payload.senderId,
+      nickname: payload.senderName || 'GIOCATORE',
+      updatedAt: Number(payload.updatedAt || payload.sentAt || Date.now()),
+    });
+    renderLivePresence(onlineState.participants);
+    return;
+  }
   if (payload.type === 'score') {
+    mergeLiveParticipant({
+      ...payload,
+      userId: payload.senderId,
+      nickname: payload.senderName || 'GIOCATORE',
+      status: 'finished',
+      updatedAt: Number(payload.updatedAt || payload.sentAt || Date.now()),
+    });
+    renderLivePresence(onlineState.participants);
     if (resultScreen.classList.contains('is-active')) showToast(`${payload.senderName} ha finito: ${payload.score}/100`);
     return;
   }
@@ -682,6 +813,7 @@ function clearChallenge() {
   });
   stage.replaceChildren();
   controls.replaceChildren();
+  $('.challenge-card').classList.remove('is-live-lobby');
   $('#keyboard-hint').textContent = '';
 }
 
@@ -848,6 +980,8 @@ function startGame({
   state.startAt = startAt;
   state.roomId = mode.startsWith('challenge-live') ? (roomId || state.roomId || state.challengeSeed) : null;
   state.roomRound = mode.startsWith('challenge-live') ? Math.max(1, Number(roomRound) || 1) : 1;
+  onlineState.ownReady = Boolean(mode.startsWith('challenge-live') && startAt);
+  onlineState.readyBusy = false;
   state.liveInviteUrl = mode.startsWith('challenge-live')
     ? buildChallengeUrl({ deck: state.deck, seed: state.challengeSeed, live: true })
     : '';
@@ -857,6 +991,7 @@ function startGame({
   if (!mode.startsWith('challenge-live')) {
     onlineState.room = null;
     onlineState.participants = [];
+    onlineState.finishedParticipants.clear();
     void disconnectRealtimeRoom();
   }
   if (mode !== 'training') {
@@ -922,33 +1057,42 @@ function renderChallenge() {
 
 function renderLiveLobby() {
   const isHost = state.mode === 'challenge-live-host';
+  $('.challenge-card').classList.add('is-live-lobby');
   const waiting = document.createElement('div');
   waiting.className = 'start-countdown live-lobby';
   waiting.innerHTML = `
     <div class="countdown-panel">
       <div class="countdown-copy">
         <span>SFIDA LIVE</span>
-        <h3>IN ATTESA<br />DELL’AMICO/A.</h3>
+        <h3>SALA<br />D’ATTESA.</h3>
         <p>${isHost
-          ? 'Invia il link e tieni aperta questa pagina. Appena entra, partirà un countdown di 3 secondi.'
-          : 'Sei nella stanza live. Attendiamo il collegamento con chi ti ha invitato.'}</p>
+          ? 'Invia il link, aspetta gli amici e mettiti pronto. La partita inizierà quando tutti saranno pronti.'
+          : 'Sei nella stanza live. Quando ci siete tutti, premi “Sono pronto”.'}</p>
       </div>
       <div class="countdown-number-box live-lobby-box" aria-hidden="true">
         <strong>••</strong>
         <small>IN ATTESA</small>
       </div>
       <div class="live-pulse" aria-hidden="true"><i></i></div>
-      <strong class="live-lobby-status">LINK INVIATO · IN ATTESA DELL’AMICO/A</strong>
+      <section class="live-lobby-roster" aria-label="Giocatori nella sala d’attesa">
+        <div><span>GIOCATORI NELLA SALA</span><b>LIVE</b></div>
+        <ul class="live-lobby-players"></ul>
+      </section>
+      <strong class="live-lobby-status">IN ATTESA DEGLI AMICI</strong>
     </div>
   `;
   stage.append(waiting);
+
+  const readyButton = makeButton('SONO PRONTO', 'confirm-button live-ready-button');
+  readyButton.addEventListener('click', () => void toggleLobbyReady());
+  controls.append(readyButton);
 
   if (isHost) {
     const shareAgain = makeButton('INVIA DI NUOVO IL LINK', 'confirm-button live-share-again');
     shareAgain.addEventListener('click', async () => {
       await shareChallengeLink({
         title: 'Entra nella mia sfida live a QUASI!',
-        text: 'Apri il link: appena entrerai partirà il countdown di 3 secondi.',
+        text: 'Apri il link, entra nella sala d’attesa e mettiti pronto per giocare insieme.',
         url: state.liveInviteUrl,
       }, 'Link copiato: invialo al tuo amico!');
     });
@@ -1914,7 +2058,7 @@ async function launchLiveChallenge() {
   const url = buildChallengeUrl({ deck, seed, live: true });
   const shareData = {
     title: 'Entra nella mia sfida live a QUASI!',
-    text: 'Apri il link: appena entrerai partirà il countdown di 3 secondi e giocheremo insieme.',
+    text: 'Apri il link, entra nella sala d’attesa e mettiti pronto per giocare insieme.',
     url,
   };
   if (!await shareChallengeLink(shareData, 'Link copiato: invialo subito al tuo amico!')) return;
@@ -2065,9 +2209,12 @@ function returnHome() {
   clearInterval(onlineState.rematchTimer);
   onlineState.room = null;
   onlineState.participants = [];
+  onlineState.finishedParticipants.clear();
   onlineState.pendingRematch = null;
   onlineState.ownRematch = null;
   onlineState.acceptedRematch = null;
+  onlineState.ownReady = false;
+  onlineState.readyBusy = false;
   void disconnectRealtimeRoom();
   $('#live-room-pill').hidden = true;
   $('#live-results-panel').hidden = true;
@@ -2187,6 +2334,47 @@ if (qaResultMode) {
     detail: 'Risultato dimostrativo per il collaudo locale.',
   }));
   finishGame();
+} else if (qaLiveResultsMode) {
+  state.mode = 'challenge-live-host';
+  state.challengeSeed = 'qa-live-results';
+  state.roomRound = 1;
+  state.deck = CHALLENGES.slice(0, 10);
+  state.results = state.deck.map((challenge, index) => ({
+    challenge,
+    score: [99, 96, 92, 88, 84, 78, 73, 68, 61, 55][index],
+    detail: 'Risultato dimostrativo per il collaudo live locale.',
+  }));
+  onlineState.participants = [
+    { userId: 'qa-one', nickname: 'ALICE', status: 'finished', score: 91, round: 10, roomRound: 1, updatedAt: 5000 },
+    { userId: 'qa-two', nickname: 'BRUNO', status: 'finished', score: 84, round: 10, roomRound: 1, updatedAt: 6000 },
+    { userId: 'qa-two', nickname: 'BRUNO', status: 'playing', score: null, round: 2, roomRound: 1, updatedAt: 1000 },
+    { userId: 'qa-three', nickname: 'CARLA', status: 'finished', score: 77, round: 10, roomRound: 1, updatedAt: 7000 },
+  ];
+  finishGame();
+} else if (qaLiveLobbyMode) {
+  state.mode = 'challenge-live-host';
+  state.challengeSeed = 'qa-live-lobby';
+  state.roomId = state.challengeSeed;
+  state.roomRound = 1;
+  state.deck = CHALLENGES.slice(0, 10);
+  state.results = [];
+  state.round = 0;
+  state.startAt = null;
+  state.liveInviteUrl = window.location.href;
+  onlineState.ownReady = qaAllReady;
+  onlineState.room = {
+    roomId: state.roomId,
+    profile: { userId: 'qa-one', nickname: 'ALICE' },
+    track: async () => undefined,
+    send: async () => undefined,
+  };
+  showScreen(gameScreen);
+  renderChallenge();
+  renderLivePresence([
+    { userId: 'qa-one', nickname: 'ALICE', status: 'waiting', ready: qaAllReady, round: 0, roomRound: 1, updatedAt: 1000 },
+    { userId: 'qa-two', nickname: 'BRUNO', status: 'waiting', ready: true, round: 0, roomRound: 1, updatedAt: 1000 },
+    { userId: 'qa-three', nickname: 'CARLA', status: 'waiting', ready: qaAllReady, round: 0, roomRound: 1, updatedAt: 1000 },
+  ]);
 } else if (qaLevelId && challengeCatalog.has(qaLevelId)) {
   startTrainingLevel(challengeCatalog.get(qaLevelId));
 
